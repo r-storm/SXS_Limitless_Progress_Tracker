@@ -22,10 +22,18 @@ export default function GuildTracker() {
           <div style={S.eyebrow}>LIMITLESS · SWORD × STAFF</div>
           <h1 style={S.h1}>Guild Tracker</h1>
         </div>
-        <nav style={S.tabs}>
-          <button style={tabStyle(tab === "roster")} onClick={() => setTab("roster")}>Roster</button>
-          <button style={tabStyle(tab === "conquest")} onClick={() => setTab("conquest")}>Conquest DMG</button>
-        </nav>
+        <div style={S.headRight}>
+          <a href="https://discord.gg/kmBs9N7m9N" target="_blank" rel="noopener noreferrer" style={S.discordBtn}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+              <path d="M20.317 4.369A19.79 19.79 0 0 0 16.558 3a.07.07 0 0 0-.073.035c-.211.375-.444.864-.608 1.249a18.27 18.27 0 0 0-5.487 0 12.6 12.6 0 0 0-.617-1.25A.07.07 0 0 0 9.692 3 19.74 19.74 0 0 0 5.93 4.369a.06.06 0 0 0-.029.024C3.533 7.91 2.886 11.343 3.2 14.733a.08.08 0 0 0 .031.054 19.9 19.9 0 0 0 5.993 3.03.07.07 0 0 0 .077-.027c.462-.63.873-1.295 1.226-1.994a.07.07 0 0 0-.038-.098 13.1 13.1 0 0 1-1.872-.892.07.07 0 0 1-.007-.117c.126-.094.252-.192.372-.291a.07.07 0 0 1 .071-.01c3.927 1.793 8.18 1.793 12.061 0a.07.07 0 0 1 .072.009c.12.099.246.198.373.292a.07.07 0 0 1-.006.117c-.598.349-1.22.645-1.873.891a.07.07 0 0 0-.037.099c.36.698.772 1.362 1.225 1.993a.07.07 0 0 0 .078.028 19.84 19.84 0 0 0 6.002-3.03.08.08 0 0 0 .031-.054c.5-3.927-.838-7.33-3.549-10.34a.06.06 0 0 0-.028-.024ZM9.69 12.67c-1.182 0-2.156-1.085-2.156-2.419 0-1.333.955-2.419 2.156-2.419 1.21 0 2.175 1.096 2.156 2.42 0 1.333-.955 2.418-2.156 2.418Zm7.974 0c-1.182 0-2.156-1.085-2.156-2.419 0-1.333.955-2.419 2.156-2.419 1.21 0 2.175 1.096 2.156 2.42 0 1.333-.946 2.418-2.156 2.418Z" />
+            </svg>
+            Join Discord
+          </a>
+          <nav style={S.tabs}>
+            <button style={tabStyle(tab === "roster")} onClick={() => setTab("roster")}>Roster</button>
+            <button style={tabStyle(tab === "conquest")} onClick={() => setTab("conquest")}>Conquest DMG</button>
+          </nav>
+        </div>
       </header>
 
       {tab === "roster" ? (
@@ -416,7 +424,9 @@ const S = {
   header: { display: "flex", justifyContent: "space-between", alignItems: "flex-end", flexWrap: "wrap", gap: 16, marginBottom: 18 },
   eyebrow: { fontFamily: F.mono, fontSize: 11, letterSpacing: 2, color: C.accent, marginBottom: 6 },
   h1: { fontFamily: F.display, fontWeight: 700, fontSize: "clamp(22px,3.4vw,34px)", margin: 0, letterSpacing: -0.5 },
+  headRight: { display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" },
   tabs: { display: "flex", gap: 8 },
+  discordBtn: { display: "inline-flex", alignItems: "center", gap: 7, background: "#5865F2", color: "#fff", textDecoration: "none", border: "none", borderRadius: 8, padding: "8px 14px", fontFamily: F.display, fontWeight: 600, fontSize: 13, cursor: "pointer" },
   headStats: { display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 14 },
   stat: { background: C.panel, border: `1px solid ${C.line}`, borderRadius: 10, padding: "8px 14px", minWidth: 78 },
   statValue: { fontFamily: F.display, fontWeight: 600, fontSize: 18 },
