@@ -106,6 +106,25 @@ function RosterView({ snaps, firstSeen, onPlayerClick }) {
     return { members: present.length, power: present.reduce((s, r) => s + r.power, 0) };
   }, [active, currentKeys]);
 
+  const widgets = useMemo(() => {
+    const present = active.rows.filter((r) => currentKeys.has(r.key));
+    if (!present.length) return null;
+    const totalPower = present.reduce((s, r) => s + r.power, 0);
+    const gainers = present.map((r) => ({ ...r, d: cmap[r.key] ? r.power - cmap[r.key].power : null })).filter((r) => r.d != null);
+    const classCount = {};
+    for (const r of present) { const c = getProfile(r.key)?.class; if (c) classCount[c] = (classCount[c] || 0) + 1; }
+    return {
+      count: present.length,
+      totalPower,
+      avgPower: Math.round(totalPower / present.length),
+      byPower: topN(present, (r) => r.power),
+      byWeek: topN(present, (r) => r.week),
+      byTotal: topN(present, (r) => r.total),
+      byGain: gainers.length ? topN(gainers, (r) => r.d) : [],
+      classes: Object.entries(classCount).sort((a, b) => b[1] - a[1]),
+    };
+  }, [active, currentKeys, cmap]);
+
   const isFirstSnap = snaps[0].id === active.id;
   const rows = useMemo(() => {
     let list = active.rows.filter((r) => currentKeys.has(r.key)).map((r) => {
@@ -144,43 +163,58 @@ function RosterView({ snaps, firstSeen, onPlayerClick }) {
       <div style={S.headStats}>
         <Stat label="Members" value={totals.members} />
         <Stat label="Total power" value={fmtNum(totals.power)} />
+        {widgets && <Stat label="Avg power" value={fmtNum(widgets.avgPower)} />}
         <Stat label="Snapshots" value={snaps.length} />
       </div>
       <SnapBar snaps={snaps} activeId={activeId} setActiveId={setActiveId} compareId={compareId} setCompareId={setCompareId}
         query={query} setQuery={setQuery} />
       {compare && <div style={S.diffNote}>Deltas compare <b>{fmtDate(active.capturedAt)}</b> against <b>{fmtDate(compare.capturedAt)}</b>.</div>}
 
-      <div style={{ ...S.tableWrap, width: "fit-content", maxWidth: "100%" }}>
-        <table style={{ ...S.table, width: "auto", minWidth: 0 }}>
-          <thead><tr>
-            <Th onClick={() => setSort("name")} active={sortKey === "name"} dir={sortDir} align="left">Player</Th>
-            <Th onClick={() => setSort("power")} active={sortKey === "power"} dir={sortDir}>Power</Th>
-            {compare && <Th onClick={() => setSort("powerDelta")} active={sortKey === "powerDelta"} dir={sortDir}>Δ Power</Th>}
-            <Th onClick={() => setSort("rank")} active={sortKey === "rank"} dir={sortDir}>Rank</Th>
-            <Th onClick={() => setSort("week")} active={sortKey === "week"} dir={sortDir}>This Week</Th>
-            <Th onClick={() => setSort("total")} active={sortKey === "total"} dir={sortDir}>Total Contrib.</Th>
-            <Th>Login</Th>
-          </tr></thead>
-          <tbody>
-            {rows.map((r, i) => (
-              <tr key={r.key} className="row">
-                <td style={S.tdName}>
-                  <span style={S.rankNum}>{i + 1}</span>
-                  <button className="pname" style={S.nameBtn} onClick={() => onPlayerClick(r.key)}>{r.name}</button>
-                  {r.role && <span style={{ ...S.roleBadge, ...roleStyle(r.role) }}>{r.role}</span>}
-                  {r.isNew && <span style={S.newBadge}>NEW</span>}
-                </td>
-                <td style={S.tdNum}>{fmtNum(r.power)}</td>
-                {compare && <td style={S.tdNum}>{deltaCell(r.powerDelta)}</td>}
-                <td style={S.tdMid}>{r.rank}</td>
-                <td style={S.tdNum}>{r.week}{compare && r.weekDelta ? <span style={miniDelta(r.weekDelta)}> {r.weekDelta > 0 ? "+" : ""}{r.weekDelta}</span> : null}</td>
-                <td style={S.tdNum}>{fmtNum(r.total)}{compare && r.totalDelta ? <span style={miniDelta(r.totalDelta)}> {r.totalDelta > 0 ? "+" : "-"}{fmtNum(Math.abs(r.totalDelta))}</span> : null}</td>
-                <td style={S.tdMid}>{r.login}</td>
-              </tr>
-            ))}
-            {rows.length === 0 && <tr><td colSpan={compare ? 7 : 6} style={S.empty}>No players match "{query}".</td></tr>}
-          </tbody>
-        </table>
+      <div style={S.layout}>
+        <div style={{ ...S.tableWrap, width: "fit-content", maxWidth: "100%" }}>
+          <table style={{ ...S.table, width: "auto", minWidth: 0 }}>
+            <thead><tr>
+              <Th onClick={() => setSort("name")} active={sortKey === "name"} dir={sortDir} align="left">Player</Th>
+              <Th onClick={() => setSort("power")} active={sortKey === "power"} dir={sortDir}>Power</Th>
+              {compare && <Th onClick={() => setSort("powerDelta")} active={sortKey === "powerDelta"} dir={sortDir}>Δ Power</Th>}
+              <Th onClick={() => setSort("rank")} active={sortKey === "rank"} dir={sortDir}>Rank</Th>
+              <Th onClick={() => setSort("week")} active={sortKey === "week"} dir={sortDir}>This Week</Th>
+              <Th onClick={() => setSort("total")} active={sortKey === "total"} dir={sortDir}>Total Contrib.</Th>
+            </tr></thead>
+            <tbody>
+              {rows.map((r, i) => (
+                <tr key={r.key} className="row">
+                  <td style={S.tdName}>
+                    <span style={S.rankNum}>{i + 1}</span>
+                    <button className="pname" style={S.nameBtn} onClick={() => onPlayerClick(r.key)}>{r.name}</button>
+                    {r.role && <span style={{ ...S.roleBadge, ...roleStyle(r.role) }}>{r.role}</span>}
+                    {r.isNew && <span style={S.newBadge}>NEW</span>}
+                  </td>
+                  <td style={S.tdNum}>{fmtNum(r.power)}</td>
+                  {compare && <td style={S.tdNum}>{deltaCell(r.powerDelta)}</td>}
+                  <td style={S.tdMid}>{r.rank}</td>
+                  <td style={S.tdNum}>{r.week}{compare && r.weekDelta ? <span style={miniDelta(r.weekDelta)}> {r.weekDelta > 0 ? "+" : ""}{r.weekDelta}</span> : null}</td>
+                  <td style={S.tdNum}>{fmtNum(r.total)}{compare && r.totalDelta ? <span style={miniDelta(r.totalDelta)}> {r.totalDelta > 0 ? "+" : "-"}{fmtNum(Math.abs(r.totalDelta))}</span> : null}</td>
+                </tr>
+              ))}
+              {rows.length === 0 && <tr><td colSpan={compare ? 6 : 5} style={S.empty}>No players match "{query}".</td></tr>}
+            </tbody>
+          </table>
+        </div>
+
+        {widgets && (
+          <aside style={S.side}>
+            <TopList icon={<IconZap />} title="Strongest" items={widgets.byPower} render={(r) => fmtNum(r.power)} onPlayerClick={onPlayerClick} />
+            {widgets.byGain.length > 0 && <TopList icon={<IconTrendingUp />} title="Biggest power gain" items={widgets.byGain} render={(r) => `${r.d > 0 ? "+" : ""}${fmtNum(r.d)}`} onPlayerClick={onPlayerClick} />}
+            <TopList icon={<IconFlame />} title="Top contribution this week" items={widgets.byWeek} render={(r) => fmtNum(r.week)} onPlayerClick={onPlayerClick} />
+            <TopList icon={<IconTrophy />} title="Most total contrib." items={widgets.byTotal} render={(r) => fmtNum(r.total)} onPlayerClick={onPlayerClick} />
+            {widgets.classes.length > 0 && (
+              <SideCard title="Class split">
+                {widgets.classes.map(([c, n]) => <ClassBar key={c} name={c} count={n} total={widgets.count} />)}
+              </SideCard>
+            )}
+          </aside>
+        )}
       </div>
     </>
   );
@@ -205,6 +239,22 @@ function ConquestView({ snaps, firstSeen, onPlayerClick }) {
     const present = active.rows.filter((r) => currentKeys.has(r.key));
     return { members: present.length, dmg: present.reduce((s, r) => s + r.dmg, 0) };
   }, [active, currentKeys]);
+
+  const widgets = useMemo(() => {
+    const present = active.rows.filter((r) => currentKeys.has(r.key));
+    if (!present.length) return null;
+    const totalDmg = present.reduce((s, r) => s + r.dmg, 0);
+    const byDmg = topN(present, (r) => r.dmg);
+    const gainers = present.map((r) => ({ ...r, d: cmap[r.key] ? r.dmg - cmap[r.key].dmg : null })).filter((r) => r.d != null);
+    return {
+      count: present.length,
+      totalDmg,
+      avgDmg: Math.round(totalDmg / present.length),
+      topShare: Math.round((byDmg[0].dmg / totalDmg) * 100),
+      byDmg,
+      byGain: gainers.length ? topN(gainers, (r) => r.d) : [],
+    };
+  }, [active, currentKeys, cmap]);
 
   const isFirstSnap = snaps[0].id === active.id;
   const rows = useMemo(() => {
@@ -232,35 +282,46 @@ function ConquestView({ snaps, firstSeen, onPlayerClick }) {
       <div style={S.headStats}>
         <Stat label="Players" value={totals.members} />
         <Stat label="Total DMG" value={fmtNum(totals.dmg)} />
+        {widgets && <Stat label="Avg DMG" value={fmtNum(widgets.avgDmg)} />}
+        {widgets && <Stat label="Top share" value={`${widgets.topShare}%`} />}
         <Stat label="Snapshots" value={snaps.length} />
       </div>
       <SnapBar snaps={snaps} activeId={activeId} setActiveId={setActiveId} compareId={compareId} setCompareId={setCompareId}
         query={query} setQuery={setQuery} />
       {compare && <div style={S.diffNote}>Deltas compare <b>{fmtDate(active.capturedAt)}</b> against <b>{fmtDate(compare.capturedAt)}</b>.</div>}
 
-      <div style={{ ...S.tableWrap, width: "fit-content", maxWidth: "100%" }}>
-        <table style={{ ...S.table, width: "auto", minWidth: 0 }}>
-          <thead><tr>
-            <Th align="left">Rank</Th>
-            <Th onClick={() => setSort("name")} active={sortKey === "name"} dir={sortDir} align="left">Player</Th>
-            <Th onClick={() => setSort("dmg")} active={sortKey === "dmg"} dir={sortDir}>Conquest DMG</Th>
-            {compare && <Th onClick={() => setSort("dmgDelta")} active={sortKey === "dmgDelta"} dir={sortDir}>Δ DMG</Th>}
-          </tr></thead>
-          <tbody>
-            {rows.map((r, i) => (
-              <tr key={r.key} className="row">
-                <td style={S.tdMidLeft}><span style={S.rankBig}>{i + 1}</span></td>
-                <td style={S.tdName}>
-                  <button className="pname" style={S.nameBtn} onClick={() => onPlayerClick(r.key)}>{r.name}</button>
-                  {r.isNew && <span style={S.newBadge}>NEW</span>}
-                </td>
-                <td style={S.tdNum}>{fmtNum(r.dmg)}</td>
-                {compare && <td style={S.tdNum}>{deltaCell(r.dmgDelta)}</td>}
-              </tr>
-            ))}
-            {rows.length === 0 && <tr><td colSpan={compare ? 4 : 3} style={S.empty}>No players match "{query}".</td></tr>}
-          </tbody>
-        </table>
+      <div style={S.layout}>
+        <div style={{ ...S.tableWrap, width: "fit-content", maxWidth: "100%" }}>
+          <table style={{ ...S.table, width: "auto", minWidth: 0 }}>
+            <thead><tr>
+              <Th align="left">Rank</Th>
+              <Th onClick={() => setSort("name")} active={sortKey === "name"} dir={sortDir} align="left">Player</Th>
+              <Th onClick={() => setSort("dmg")} active={sortKey === "dmg"} dir={sortDir}>Conquest DMG</Th>
+              {compare && <Th onClick={() => setSort("dmgDelta")} active={sortKey === "dmgDelta"} dir={sortDir}>Δ DMG</Th>}
+            </tr></thead>
+            <tbody>
+              {rows.map((r, i) => (
+                <tr key={r.key} className="row">
+                  <td style={S.tdMidLeft}><span style={S.rankBig}>{i + 1}</span></td>
+                  <td style={S.tdName}>
+                    <button className="pname" style={S.nameBtn} onClick={() => onPlayerClick(r.key)}>{r.name}</button>
+                    {r.isNew && <span style={S.newBadge}>NEW</span>}
+                  </td>
+                  <td style={S.tdNum}>{fmtNum(r.dmg)}</td>
+                  {compare && <td style={S.tdNum}>{deltaCell(r.dmgDelta)}</td>}
+                </tr>
+              ))}
+              {rows.length === 0 && <tr><td colSpan={compare ? 4 : 3} style={S.empty}>No players match "{query}".</td></tr>}
+            </tbody>
+          </table>
+        </div>
+
+        {widgets && (
+          <aside style={S.side}>
+            <TopList icon={<IconTarget />} title="Top damage" items={widgets.byDmg} render={(r) => fmtNum(r.dmg)} onPlayerClick={onPlayerClick} />
+            {widgets.byGain.length > 0 && <TopList icon={<IconTrendingUp />} title="Biggest increase" items={widgets.byGain} render={(r) => `${r.d > 0 ? "+" : ""}${fmtNum(r.d)}`} onPlayerClick={onPlayerClick} />}
+          </aside>
+        )}
       </div>
     </>
   );
@@ -365,6 +426,45 @@ function PmStat({ label, value }) {
   );
 }
 
+// ── Icons (inline, stroke inherits text color) ───────────────────────────────────
+const ICON = { width: 14, height: 14, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: 2, strokeLinecap: "round", strokeLinejoin: "round", "aria-hidden": true };
+const IconZap = () => <svg {...ICON}><path d="M13 2 3 14h9l-1 8 10-12h-9l1-8z" /></svg>;
+const IconTrendingUp = () => <svg {...ICON}><polyline points="22 7 13.5 15.5 8.5 10.5 2 17" /><polyline points="16 7 22 7 22 13" /></svg>;
+const IconFlame = () => <svg {...ICON}><path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z" /></svg>;
+const IconTrophy = () => <svg {...ICON}><path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6" /><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18" /><path d="M4 22h16" /><path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22" /><path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22" /><path d="M18 2H6v7a6 6 0 0 0 12 0V2Z" /></svg>;
+const IconTarget = () => <svg {...ICON}><circle cx="12" cy="12" r="10" /><circle cx="12" cy="12" r="6" /><circle cx="12" cy="12" r="2" /></svg>;
+
+// ── Side widgets ─────────────────────────────────────────────────────────────────
+function topN(arr, f, n = 5) {
+  return [...arr].sort((a, b) => f(b) - f(a)).slice(0, n);
+}
+function SideCard({ title, children }) {
+  return <div style={S.sideCard}><div style={S.sideCardTitle}>{title}</div>{children}</div>;
+}
+function TopList({ icon, title, items, render, onPlayerClick }) {
+  if (!items.length) return null;
+  return (
+    <SideCard title={<span style={S.cardTitle}>{icon}{title}</span>}>
+      {items.map((r, i) => (
+        <div key={r.key} style={S.topRow}>
+          <span style={S.topRank}>{i + 1}</span>
+          <button className="pname" style={S.topName} onClick={() => onPlayerClick(r.key)}>{r.name}</button>
+          <span style={S.topVal}>{render(r)}</span>
+        </div>
+      ))}
+    </SideCard>
+  );
+}
+function ClassBar({ name, count, total }) {
+  const pct = Math.round((count / total) * 100);
+  return (
+    <div style={S.classRow}>
+      <div style={S.classHead}><span>{name}</span><span style={S.kvValue}>{count}</span></div>
+      <div style={S.classTrack}><div style={{ ...S.classFill, width: `${pct}%` }} /></div>
+    </div>
+  );
+}
+
 // ── Small components ───────────────────────────────────────────────────────────
 function Stat({ label, value }) {
   return <div style={S.stat}><div style={S.statValue}>{value}</div><div style={S.statLabel}>{label}</div></div>;
@@ -439,6 +539,22 @@ const S = {
   ghostBtn: { background: "transparent", color: C.dim, border: `1px solid ${C.line}`, borderRadius: 8, padding: "8px 12px", fontFamily: F.body, fontSize: 13, cursor: "pointer" },
   diffNote: { fontSize: 12, color: C.dim, marginBottom: 10, padding: "6px 10px", background: C.panel, border: `1px solid ${C.line}`, borderRadius: 8 },
   hint: { fontSize: 12, color: C.dim, marginBottom: 10 },
+
+  // ── Layout + side widgets ──
+  layout: { display: "flex", gap: 14, alignItems: "flex-start", flexWrap: "wrap" },
+  side: { display: "flex", flexDirection: "column", gap: 10, flex: "1 1 240px", minWidth: 220, maxWidth: 420 },
+  sideCard: { background: C.panel, border: `1px solid ${C.line}`, borderRadius: 12, padding: 14 },
+  sideCardTitle: { fontFamily: F.mono, fontSize: 10, letterSpacing: 1.5, textTransform: "uppercase", color: C.dim, marginBottom: 10 },
+  cardTitle: { display: "inline-flex", alignItems: "center", gap: 6, color: C.accent },
+  kvValue: { fontFamily: F.mono, fontWeight: 600, color: C.ink },
+  topRow: { display: "flex", alignItems: "baseline", gap: 8, padding: "6px 0", borderTop: `1px solid ${C.line}` },
+  topRank: { fontFamily: F.mono, fontSize: 11, color: C.faint, width: 16, textAlign: "right", flex: "0 0 auto" },
+  topName: { background: "none", border: "none", padding: 0, margin: 0, color: C.accent, fontFamily: F.display, fontWeight: 600, fontSize: 14, cursor: "pointer", textAlign: "left", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
+  topVal: { fontFamily: F.mono, fontWeight: 600, fontSize: 13, color: C.ink, whiteSpace: "nowrap", flex: "0 0 auto" },
+  classRow: { padding: "6px 0" },
+  classHead: { display: "flex", justifyContent: "space-between", fontSize: 13, marginBottom: 4 },
+  classTrack: { height: 6, background: C.panel2, borderRadius: 999, overflow: "hidden" },
+  classFill: { height: "100%", background: C.accent, borderRadius: 999 },
   tableWrap: { overflowX: "auto", border: `1px solid ${C.line}`, borderRadius: 12, background: C.panel },
   table: { width: "100%", borderCollapse: "collapse", minWidth: 560 },
   th: { fontFamily: F.mono, fontSize: 11, letterSpacing: 0.5, textTransform: "uppercase", padding: "12px 14px", borderBottom: `1px solid ${C.line}`, userSelect: "none", whiteSpace: "nowrap", background: C.panel2 },
