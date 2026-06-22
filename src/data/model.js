@@ -3,7 +3,7 @@
 // normalised (game strings -> integers) and tagged with a canonical player `key`,
 // so comparisons across weeks always line up the same player even if their
 // display name's casing/spacing changes.
-import WEEKS from "./weeks/index.js";
+import { CAPTURES as WEEKS } from "./captures/index.js";
 import { playerKey } from "./players.js";
 import { parseNum } from "./format.js";
 
@@ -39,13 +39,16 @@ function dedupe(rows) {
 
 // One snapshot per week for a given dataset ("roster" | "conquest").
 // IDs are deterministic (kind + index) so they stay stable across reloads.
+// Captures with no rows for this dataset are dropped — e.g. a day where the
+// roster was read but Conquest DMG wasn't — so views never default to a blank
+// snapshot.
 function buildSnaps(kind, mapRow) {
   return WEEKS.map((wk, i) => ({
     id: `${kind[0]}_${i}`,
     capturedAt: wk.capturedAt,
     label: wk.label || "",
     rows: dedupe((wk[kind] || []).map(mapRow)),
-  }));
+  })).filter((s) => s.rows.length);
 }
 
 // Map of canonical key -> id of the snapshot a player first appears in.

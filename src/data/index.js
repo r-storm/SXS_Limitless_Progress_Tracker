@@ -6,5 +6,4 @@ export * from "./format.js";
 export * from "./model.js";
 export { playerKey, RENAMES } from "./players.js";
 export { parseRoster, parseConquest } from "./parse.js";
-export { default as WEEKS } from "./weeks/index.js";
-export { PROFILES, PROFILE_META, getProfile } from "./profiles/index.js";
+export { CAPTURES, CAPTURES as WEEKS, PROFILES, PROFILE_META, getProfile, profileTimeline } from "./captures/index.js";

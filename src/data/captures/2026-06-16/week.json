@@ -1,0 +1,702 @@
+{
+  "capturedAt": "2026-06-16T12:00:00.000Z",
+  "label": "Week 1",
+  "roster": [
+    {
+      "name": "Mulan",
+      "power": "1.99M",
+      "rank": "Expert III",
+      "week": 540,
+      "total": "4.26K",
+      "login": "2h",
+      "role": "Deputy"
+    },
+    {
+      "name": "Steena",
+      "power": "1.95M",
+      "rank": "Expert III",
+      "week": 550,
+      "total": "3.83K",
+      "login": "3h",
+      "role": "Officer"
+    },
+    {
+      "name": "ChildSupport",
+      "power": "1.91M",
+      "rank": "Expert III",
+      "week": 560,
+      "total": "4.24K",
+      "login": "11h",
+      "role": ""
+    },
+    {
+      "name": "Baboii",
+      "power": "1.46M",
+      "rank": "Expert III",
+      "week": 540,
+      "total": "3.33K",
+      "login": "5h",
+      "role": ""
+    },
+    {
+      "name": "Odeon",
+      "power": "1.4M",
+      "rank": "Expert III",
+      "week": 560,
+      "total": "3.52K",
+      "login": "9h",
+      "role": ""
+    },
+    {
+      "name": "Lady'Boy",
+      "power": "1.39M",
+      "rank": "Expert III",
+      "week": 560,
+      "total": "4.26K",
+      "login": "26m",
+      "role": ""
+    },
+    {
+      "name": "Anastasia11",
+      "power": "1.37M",
+      "rank": "Expert III",
+      "week": 540,
+      "total": "4.43K",
+      "login": "1h",
+      "role": ""
+    },
+    {
+      "name": "Rham",
+      "power": "1.37M",
+      "rank": "Expert III",
+      "week": 530,
+      "total": "3.88K",
+      "login": "8h",
+      "role": ""
+    },
+    {
+      "name": "Easymode",
+      "power": "1.35M",
+      "rank": "Expert III",
+      "week": 500,
+      "total": "570",
+      "login": "49m",
+      "role": ""
+    },
+    {
+      "name": "Carry",
+      "power": "1.22M",
+      "rank": "Expert III",
+      "week": 550,
+      "total": "1.22K",
+      "login": "1h",
+      "role": ""
+    },
+    {
+      "name": "Rhaenyra",
+      "power": "1.22M",
+      "rank": "Expert III",
+      "week": 500,
+      "total": "3.92K",
+      "login": "12h",
+      "role": ""
+    },
+    {
+      "name": "AsterBlaze",
+      "power": "1.21M",
+      "rank": "Expert III",
+      "week": 440,
+      "total": "4.09K",
+      "login": "Online",
+      "role": "Leader"
+    },
+    {
+      "name": "Bfoz",
+      "power": "1.21M",
+      "rank": "Expert III",
+      "week": 540,
+      "total": "1K",
+      "login": "2h",
+      "role": ""
+    },
+    {
+      "name": "mxrc",
+      "power": "1.19M",
+      "rank": "Expert III",
+      "week": 560,
+      "total": "2.37K",
+      "login": "3h",
+      "role": ""
+    },
+    {
+      "name": "Jivvy",
+      "power": "1.18M",
+      "rank": "Expert III",
+      "week": 540,
+      "total": "2.81K",
+      "login": "7h",
+      "role": ""
+    },
+    {
+      "name": "pschips",
+      "power": "1.13M",
+      "rank": "Expert III",
+      "week": 560,
+      "total": "4.07K",
+      "login": "4h",
+      "role": ""
+    },
+    {
+      "name": "tko",
+      "power": "1.12M",
+      "rank": "Expert III",
+      "week": 480,
+      "total": "1.15K",
+      "login": "29m",
+      "role": ""
+    },
+    {
+      "name": "Koraly",
+      "power": "1.1M",
+      "rank": "Expert III",
+      "week": 520,
+      "total": "2.07K",
+      "login": "Online",
+      "role": ""
+    },
+    {
+      "name": "bagel",
+      "power": "1.09M",
+      "rank": "Expert III",
+      "week": 540,
+      "total": "3.71K",
+      "login": "15m",
+      "role": ""
+    },
+    {
+      "name": "Via.",
+      "power": "1.09M",
+      "rank": "Expert III",
+      "week": 560,
+      "total": "2.81K",
+      "login": "2h",
+      "role": ""
+    },
+    {
+      "name": "DQO07",
+      "power": "1.06M",
+      "rank": "Expert III",
+      "week": 40,
+      "total": "40",
+      "login": "8h",
+      "role": ""
+    },
+    {
+      "name": "Nymera",
+      "power": "1.04M",
+      "rank": "Expert II",
+      "week": 560,
+      "total": "2.08K",
+      "login": "3h",
+      "role": ""
+    },
+    {
+      "name": "Leetokki",
+      "power": "1.03M",
+      "rank": "Expert III",
+      "week": 30,
+      "total": "30",
+      "login": "31m",
+      "role": ""
+    },
+    {
+      "name": "MRTwilight",
+      "power": "984K",
+      "rank": "Expert II",
+      "week": 560,
+      "total": "3.44K",
+      "login": "50m",
+      "role": ""
+    },
+    {
+      "name": "Holley",
+      "power": "976K",
+      "rank": "Expert II",
+      "week": 520,
+      "total": "1.98K",
+      "login": "19h",
+      "role": ""
+    },
+    {
+      "name": "Seraphic",
+      "power": "959K",
+      "rank": "Expert II",
+      "week": 530,
+      "total": "3.95K",
+      "login": "21h",
+      "role": ""
+    },
+    {
+      "name": "Shinarui",
+      "power": "943K",
+      "rank": "Expert II",
+      "week": 500,
+      "total": "1.54K",
+      "login": "2h",
+      "role": ""
+    },
+    {
+      "name": "ErisBoreat",
+      "power": "916K",
+      "rank": "Expert II",
+      "week": 510,
+      "total": "810",
+      "login": "3h",
+      "role": ""
+    },
+    {
+      "name": "Guedeux",
+      "power": "912K",
+      "rank": "Expert II",
+      "week": 540,
+      "total": "1.53K",
+      "login": "7h",
+      "role": ""
+    },
+    {
+      "name": "Torii",
+      "power": "900K",
+      "rank": "Expert II",
+      "week": 520,
+      "total": "3.07K",
+      "login": "5h",
+      "role": ""
+    },
+    {
+      "name": "KiwiSplat",
+      "power": "897K",
+      "rank": "Expert II",
+      "week": 540,
+      "total": "4.09K",
+      "login": "3m",
+      "role": ""
+    },
+    {
+      "name": "MafiOzos",
+      "power": "895K",
+      "rank": "Expert II",
+      "week": 520,
+      "total": "2.26K",
+      "login": "13h",
+      "role": ""
+    },
+    {
+      "name": "Raij",
+      "power": "891K",
+      "rank": "Expert III",
+      "week": 460,
+      "total": "3.53K",
+      "login": "5m",
+      "role": ""
+    },
+    {
+      "name": "Lualz",
+      "power": "883K",
+      "rank": "Expert II",
+      "week": 500,
+      "total": "1.33K",
+      "login": "12h",
+      "role": ""
+    },
+    {
+      "name": "Obviously",
+      "power": "870K",
+      "rank": "Expert II",
+      "week": 70,
+      "total": "70",
+      "login": "12m",
+      "role": ""
+    },
+    {
+      "name": "Slytherin",
+      "power": "854K",
+      "rank": "Expert II",
+      "week": 10,
+      "total": "10",
+      "login": "5h",
+      "role": ""
+    },
+    {
+      "name": "eepy",
+      "power": "853K",
+      "rank": "Expert II",
+      "week": 560,
+      "total": "1.52K",
+      "login": "6h",
+      "role": ""
+    },
+    {
+      "name": "Gattaca",
+      "power": "851K",
+      "rank": "Expert II",
+      "week": 160,
+      "total": "160",
+      "login": "24m",
+      "role": ""
+    },
+    {
+      "name": "Zega",
+      "power": "840K",
+      "rank": "Expert II",
+      "week": 560,
+      "total": "4.33K",
+      "login": "5h",
+      "role": ""
+    },
+    {
+      "name": "Haribo",
+      "power": "834K",
+      "rank": "Expert II",
+      "week": 460,
+      "total": "4.41K",
+      "login": "1h",
+      "role": ""
+    },
+    {
+      "name": "Do7a",
+      "power": "834K",
+      "rank": "Expert II",
+      "week": 550,
+      "total": "4.39K",
+      "login": "2h",
+      "role": ""
+    },
+    {
+      "name": "Raiyan",
+      "power": "825K",
+      "rank": "Expert II",
+      "week": 480,
+      "total": "3.71K",
+      "login": "4h",
+      "role": ""
+    },
+    {
+      "name": "Yuutaaa",
+      "power": "811K",
+      "rank": "Expert II",
+      "week": 480,
+      "total": "700",
+      "login": "1h",
+      "role": ""
+    },
+    {
+      "name": "jimmycoco",
+      "power": "791K",
+      "rank": "Expert II",
+      "week": 520,
+      "total": "3.79K",
+      "login": "6h",
+      "role": ""
+    },
+    {
+      "name": "Raynarex",
+      "power": "783K",
+      "rank": "Expert II",
+      "week": 530,
+      "total": "3.9K",
+      "login": "9h",
+      "role": ""
+    },
+    {
+      "name": "Meei",
+      "power": "782K",
+      "rank": "Expert II",
+      "week": 460,
+      "total": "2.91K",
+      "login": "6h",
+      "role": ""
+    },
+    {
+      "name": "Clayrex",
+      "power": "771K",
+      "rank": "Expert II",
+      "week": 540,
+      "total": "840",
+      "login": "39m",
+      "role": ""
+    },
+    {
+      "name": "Shrecky",
+      "power": "770K",
+      "rank": "Expert II",
+      "week": 540,
+      "total": "1.82K",
+      "login": "17h",
+      "role": ""
+    },
+    {
+      "name": "ØDVØLTA",
+      "power": "761K",
+      "rank": "Expert II",
+      "week": 330,
+      "total": "3.79K",
+      "login": "1d",
+      "role": ""
+    },
+    {
+      "name": "Peyz",
+      "power": "750K",
+      "rank": "Expert II",
+      "week": 560,
+      "total": "4.28K",
+      "login": "12h",
+      "role": ""
+    },
+    {
+      "name": "Bubblin",
+      "power": "747K",
+      "rank": "Expert II",
+      "week": 560,
+      "total": "3.76K",
+      "login": "4h",
+      "role": ""
+    },
+    {
+      "name": "Jirou",
+      "power": "746K",
+      "rank": "Expert II",
+      "week": 520,
+      "total": "3.65K",
+      "login": "6h",
+      "role": ""
+    },
+    {
+      "name": "Kashima",
+      "power": "737K",
+      "rank": "Expert II",
+      "week": 370,
+      "total": "3.24K",
+      "login": "13m",
+      "role": ""
+    },
+    {
+      "name": "BigZozo",
+      "power": "724K",
+      "rank": "Expert II",
+      "week": 0,
+      "total": "2.94K",
+      "login": "1d",
+      "role": ""
+    }
+  ],
+  "conquest": [
+    {
+      "name": "Mulan",
+      "dmg": "2.44B"
+    },
+    {
+      "name": "ChildSupport",
+      "dmg": "1.59B"
+    },
+    {
+      "name": "Steena",
+      "dmg": "1.12B"
+    },
+    {
+      "name": "Baboii",
+      "dmg": "555M"
+    },
+    {
+      "name": "Odeon",
+      "dmg": "369M"
+    },
+    {
+      "name": "Lady'Boy",
+      "dmg": "330M"
+    },
+    {
+      "name": "AsterBlaze",
+      "dmg": "284M"
+    },
+    {
+      "name": "Anastasia11",
+      "dmg": "224M"
+    },
+    {
+      "name": "mxrc",
+      "dmg": "200M"
+    },
+    {
+      "name": "pschips",
+      "dmg": "175M"
+    },
+    {
+      "name": "Seraphic",
+      "dmg": "161M"
+    },
+    {
+      "name": "Via.",
+      "dmg": "149M"
+    },
+    {
+      "name": "Rhaenyra",
+      "dmg": "138M"
+    },
+    {
+      "name": "Rham",
+      "dmg": "137M"
+    },
+    {
+      "name": "Easymode",
+      "dmg": "133M"
+    },
+    {
+      "name": "Bfoz",
+      "dmg": "131M"
+    },
+    {
+      "name": "Carry",
+      "dmg": "123M"
+    },
+    {
+      "name": "Jivvy",
+      "dmg": "119M"
+    },
+    {
+      "name": "bagel",
+      "dmg": "85.9M"
+    },
+    {
+      "name": "tko",
+      "dmg": "84.1M"
+    },
+    {
+      "name": "Holley",
+      "dmg": "80.4M"
+    },
+    {
+      "name": "Torii",
+      "dmg": "74.8M"
+    },
+    {
+      "name": "Shinarui",
+      "dmg": "71.8M"
+    },
+    {
+      "name": "Raij",
+      "dmg": "60.7M"
+    },
+    {
+      "name": "MRTwilight",
+      "dmg": "54.9M"
+    },
+    {
+      "name": "Nymera",
+      "dmg": "49.1M"
+    },
+    {
+      "name": "MafiOzos",
+      "dmg": "47.9M"
+    },
+    {
+      "name": "Do7a",
+      "dmg": "43.3M"
+    },
+    {
+      "name": "Haribo",
+      "dmg": "37.7M"
+    },
+    {
+      "name": "Lualz",
+      "dmg": "31.4M"
+    },
+    {
+      "name": "Raynarex",
+      "dmg": "30.1M"
+    },
+    {
+      "name": "eepy",
+      "dmg": "26.6M"
+    },
+    {
+      "name": "Clayrex",
+      "dmg": "26.5M"
+    },
+    {
+      "name": "Koraly",
+      "dmg": "24.9M"
+    },
+    {
+      "name": "Raiyan",
+      "dmg": "20.7M"
+    },
+    {
+      "name": "Guedeux",
+      "dmg": "19.4M"
+    },
+    {
+      "name": "ØDVØLTA",
+      "dmg": "18.4M"
+    },
+    {
+      "name": "Peyz",
+      "dmg": "18.2M"
+    },
+    {
+      "name": "Shrecky",
+      "dmg": "17M"
+    },
+    {
+      "name": "Bubblin",
+      "dmg": "16.1M"
+    },
+    {
+      "name": "BigZozo",
+      "dmg": "15.2M"
+    },
+    {
+      "name": "ErisBoreat",
+      "dmg": "15.2M"
+    },
+    {
+      "name": "KiwiSplat",
+      "dmg": "14.9M"
+    },
+    {
+      "name": "Meei",
+      "dmg": "11.5M"
+    },
+    {
+      "name": "jimmycoco",
+      "dmg": "9.31M"
+    },
+    {
+      "name": "Yuutaaa",
+      "dmg": "7.29M"
+    },
+    {
+      "name": "Kashima",
+      "dmg": "7.24M"
+    },
+    {
+      "name": "Zega",
+      "dmg": "7.03M"
+    },
+    {
+      "name": "Jirou",
+      "dmg": "5.66M"
+    },
+    {
+      "name": "Obviously",
+      "dmg": "2.86M"
+    },
+    {
+      "name": "Leetokki",
+      "dmg": "1.52M"
+    },
+    {
+      "name": "Gattaca",
+      "dmg": "1.13M"
+    }
+  ]
+}

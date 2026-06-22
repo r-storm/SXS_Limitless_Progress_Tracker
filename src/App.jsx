@@ -3,6 +3,7 @@ import {
   fmtNum, fmtDate, parseNum, getProfile, PROFILE_META,
   ROSTER_SNAPS, CONQUEST_SNAPS,
   ROSTER_FIRST_SEEN, CONQUEST_FIRST_SEEN,
+  playerTimeline, profileTimeline,
 } from "./data";
 
 // All guild data is now sourced from the modular data layer in src/data — the UI
@@ -348,10 +349,155 @@ const GEAR_SLOTS = [
   ["armour", "Armour"],
   ["boots", "Boots"],
 ];
+// Mean enhancement across a profile's gear slots (null if no gear on record).
+function gearAvg(profile) {
+  if (!profile?.gear) return null;
+  const vals = GEAR_SLOTS.map(([k]) => profile.gear[k]).filter((v) => v != null);
+  return vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : null;
+}
+// Gear levels are small whole numbers — round, no sign (GrowthCard adds its own).
+const fmtGear = (v) => String(Math.round(v));
+// Metrics used for guild standing + head-to-head comparison.
+const COMBAT_STATS = [["atk", "ATK"], ["def", "DEF"], ["hp", "HP"], ["spd", "SPD"]];
+const CMP_METRICS = [["power", "Power"], ["dmg", "Conquest DMG"], ["atk", "ATK"], ["def", "DEF"], ["hp", "HP"], ["spd", "SPD"]];
+const GROWTH_WINDOWS = [["7d", 7], ["30d", 30], ["All", null]];
+
+// Build a one-shot index of the CURRENT guild: every present member with their
+// power + combat stats + latest conquest DMG, plus per-metric max/avg/rank so any
+// single player can be placed against the rest. Cheap (≈50 members), runs on open.
+function buildGuildIndex() {
+  const roster = ROSTER_SNAPS[ROSTER_SNAPS.length - 1];
+  const lastConquest = [...CONQUEST_SNAPS].reverse().find((s) => s.rows.length) || null;
+  const dmgMap = {};
+  if (lastConquest) lastConquest.rows.forEach((r) => { dmgMap[r.key] = r.dmg; });
+
+  const members = roster.rows.map((r) => {
+    const pr = getProfile(r.key);
+    const s = pr?.stats || {};
+    return {
+      key: r.key, name: r.name,
+      power: r.power,
+      atk: s.atk != null ? parseNum(s.atk) : null,
+      def: s.def != null ? parseNum(s.def) : null,
+      hp: s.hp != null ? parseNum(s.hp) : null,
+      spd: s.spd != null ? parseNum(s.spd) : null,
+      dmg: dmgMap[r.key] ?? null,
+    };
+  });
+
+  const stat = {};
+  for (const m of ["power", "atk", "def", "hp", "spd", "dmg"]) {
+    const vals = members.map((x) => x[m]).filter((v) => v != null);
+    const sorted = [...vals].sort((a, b) => b - a);
+    stat[m] = {
+      max: sorted[0] ?? 0,
+      avg: vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : 0,
+      count: vals.length,
+      rankOf: (v) => (v == null ? null : sorted.filter((x) => x > v).length + 1),
+    };
+  }
+  return { members, stat };
+}
+
+// One player's history for a single metric, oldest→newest, nulls dropped.
+function seriesFor(timeline, accessor) {
+  return timeline.map((t) => ({ date: t.capturedAt, value: accessor(t) })).filter((p) => p.value != null);
+}
+
+// Change in a metric over a trailing window (days), or all-time when days==null.
+// Baseline is the latest reading at/while before the cutoff, else the earliest.
+function computeGrowth(series, days) {
+  if (!series || series.length < 2) return null;
+  const latest = series[series.length - 1];
+  let base;
+  if (days == null) base = series[0];
+  else {
+    const cutoff = new Date(latest.date).getTime() - days * 86400000;
+    base = null;
+    for (const pt of series) if (new Date(pt.date).getTime() <= cutoff) base = pt;
+    if (!base) base = series[0];
+  }
+  if (base.date === latest.date) return null;
+  const delta = latest.value - base.value;
+  return { delta, pct: base.value ? (delta / base.value) * 100 : null, baseDate: base.date };
+}
+
+function Sparkline({ series, color = C.accent }) {
+  if (!series || series.length < 2) return null;
+  const w = 300, h = 52, pad = 5;
+  const vals = series.map((p) => p.value);
+  const min = Math.min(...vals), max = Math.max(...vals), range = max - min || 1;
+  const step = (w - pad * 2) / (series.length - 1);
+  const pts = series.map((p, i) => [pad + i * step, h - pad - ((p.value - min) / range) * (h - pad * 2)]);
+  const line = pts.map((c, i) => `${i ? "L" : "M"}${c[0].toFixed(1)} ${c[1].toFixed(1)}`).join(" ");
+  const area = `${line} L${pts[pts.length - 1][0].toFixed(1)} ${h - pad} L${pts[0][0].toFixed(1)} ${h - pad} Z`;
+  const last = pts[pts.length - 1];
+  const gid = `spark-${color.replace("#", "")}`;
+  return (
+    <svg viewBox={`0 0 ${w} ${h}`} width="100%" height={h} preserveAspectRatio="none" style={{ display: "block" }}>
+      <defs><linearGradient id={gid} x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0%" stopColor={color} stopOpacity="0.28" />
+        <stop offset="100%" stopColor={color} stopOpacity="0" />
+      </linearGradient></defs>
+      <path d={area} fill={`url(#${gid})`} />
+      <path d={line} fill="none" stroke={color} strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
+      <circle cx={last[0]} cy={last[1]} r="3" fill={color} />
+    </svg>
+  );
+}
+
+function GrowthCard({ label, series, days, fmt }) {
+  const g = computeGrowth(series, days);
+  return (
+    <div style={S.growthCard}>
+      <div style={S.growthLabel}>{label}</div>
+      <div style={S.growthValue}>{series.length ? fmt(series[series.length - 1].value) : "—"}</div>
+      {g ? (
+        <>
+          <div style={{ ...S.growthDelta, color: g.delta > 0 ? C.up : g.delta < 0 ? C.down : C.faint }}>
+            {g.delta > 0 ? "▲" : g.delta < 0 ? "▼" : "•"} {g.delta > 0 ? "+" : g.delta < 0 ? "-" : ""}{fmt(Math.abs(g.delta))}
+            {g.pct != null && <span style={S.growthPct}> · {g.pct > 0 ? "+" : ""}{g.pct.toFixed(1)}%</span>}
+          </div>
+          <div style={S.growthBase}>since {fmtDate(g.baseDate)}</div>
+        </>
+      ) : (
+        <div style={S.growthBase}>no earlier reading</div>
+      )}
+    </div>
+  );
+}
+
+function StandingRow({ label, value, info, fmt }) {
+  if (value == null || !info) return null;
+  const rank = info.rankOf(value);
+  const pct = info.avg ? ((value - info.avg) / info.avg) * 100 : 0;
+  const fill = info.max ? Math.max(2, (value / info.max) * 100) : 0;
+  const avgAt = info.max ? (info.avg / info.max) * 100 : 0;
+  return (
+    <div style={S.standRow}>
+      <div style={S.standHead}>
+        <span style={S.standLabel}>{label}</span>
+        <span style={S.standValue}>{fmt(value)}</span>
+      </div>
+      <div style={S.standBar}>
+        <div style={{ ...S.standFill, width: `${fill}%` }} />
+        <div style={{ ...S.standAvg, left: `${avgAt}%` }} title="Guild average" />
+      </div>
+      <div style={S.standMeta}>
+        <span style={S.rankChip}>#{rank} of {info.count}</span>
+        <span style={{ color: pct >= 0 ? C.up : C.down, fontWeight: 600 }}>
+          {pct >= 0 ? "+" : ""}{pct.toFixed(0)}% vs avg
+        </span>
+      </div>
+    </div>
+  );
+}
 
 function PlayerModal({ playerKey, onClose }) {
   const p = getProfile(playerKey);
   const [zoomed, setZoomed] = useState(false);
+  const [windowDays, setWindowDays] = useState(7);
+  const [compareKey, setCompareKey] = useState("");
 
   useEffect(() => {
     const onKey = (e) => {
@@ -363,78 +509,174 @@ function PlayerModal({ playerKey, onClose }) {
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose, zoomed]);
 
+  const guild = useMemo(buildGuildIndex, []);
+  const me = useMemo(() => guild.members.find((m) => m.key === playerKey) || null, [guild, playerKey]);
+  const timeline = useMemo(() => playerTimeline(playerKey), [playerKey]);
+  const powerSeries = useMemo(() => seriesFor(timeline, (t) => t.roster?.power), [timeline]);
+  const totalSeries = useMemo(() => seriesFor(timeline, (t) => t.roster?.total), [timeline]);
+  const dmgSeries = useMemo(() => seriesFor(timeline, (t) => t.conquest?.dmg), [timeline]);
+  const profTimeline = useMemo(() => profileTimeline(playerKey), [playerKey]);
+  const gearSeries = useMemo(() => seriesFor(profTimeline, (t) => gearAvg(t.profile)), [profTimeline]);
+  const other = compareKey ? guild.members.find((m) => m.key === compareKey) || null : null;
+
+  const displayName = p?.name || me?.name || "Unknown player";
+  const headPower = me ? fmtNum(me.power) : p?.power;
+  const others = useMemo(
+    () => guild.members.filter((m) => m.key !== playerKey).sort((a, b) => a.name.toLowerCase().localeCompare(b.name.toLowerCase())),
+    [guild, playerKey]
+  );
+
   return (
     <div style={S.modalOverlay} onClick={onClose}>
       <div style={S.pmCard} onClick={(e) => e.stopPropagation()}>
         <button style={S.pmClose} onClick={onClose} aria-label="Close">✕</button>
 
-        {!p ? (
-          <div style={S.empty}>No profile on record for this player yet.</div>
+        {!p && !me ? (
+          <div style={S.empty}>No data on record for this player yet.</div>
         ) : (
-          <div style={S.pmBody}>
-            {p.image && (
-              <div style={S.pmShotWrap}>
-                <img src={p.image} alt={`${p.name} profile`} style={S.pmShot} onClick={() => setZoomed(true)} title="Click to expand" />
-                <div style={S.pmShotCaption}>Click to expand</div>
+          <>
+            <div style={S.pmBody}>
+              {p?.image && (
+                <div className="pm-shot-wrap" style={S.pmShotWrap}>
+                  <img className="pm-shot" src={p.image} alt={`${displayName} profile`} style={S.pmShot} onClick={() => setZoomed(true)} title="Click to expand" />
+                  <div style={S.pmShotCaption}>Click to expand</div>
+                </div>
+              )}
+
+              <div style={S.pmInfo}>
+                <div style={S.pmNameRow}>
+                  <span style={S.pmName}>{displayName}</span>
+                  {p?.level != null && <span style={S.pmLevelBadge}>Lv. {p.level}</span>}
+                </div>
+                {p?.class && (
+                  <div style={S.pmClassRow}>
+                    <span style={S.pmClass}>{p.class}</span>
+                    {p.classLevel != null && <span style={S.pmClassBadge}>Class Lv. {p.classLevel}</span>}
+                  </div>
+                )}
+
+                {p?.rank && (
+                  <div style={S.pmBadges}>
+                    <span style={S.pmBadge}>{p.rank}</span>
+                  </div>
+                )}
+
+                {headPower != null && (
+                  <div style={S.pmPowerRow}>
+                    <span style={S.pmPowerLabel}>POWER</span>
+                    <span style={S.pmPowerValue}>{headPower}</span>
+                  </div>
+                )}
+
+                {p?.gear && (
+                  <>
+                    <div style={S.pmSectionLabel}>Gear</div>
+                    <div style={S.pmGearGrid}>
+                      {GEAR_SLOTS.map(([k, label]) => (
+                        <div key={k} style={S.pmGear}>
+                          <div style={S.pmGearLvl}>+{p.gear?.[k] ?? "—"}</div>
+                          <div style={S.pmGearLabel}>{label}</div>
+                        </div>
+                      ))}
+                    </div>
+                  </>
+                )}
+              </div>
+            </div>
+
+            {/* ── Growth over time ── */}
+            <div style={S.pmSection}>
+              <div style={S.pmSectionHead}>
+                <span style={S.pmSectionLabel}>Growth</span>
+                <div style={S.seg} role="group" aria-label="Growth window">
+                  {GROWTH_WINDOWS.map(([lbl, d]) => (
+                    <button key={lbl} style={segStyle(windowDays === d)} onClick={() => setWindowDays(d)}>{lbl}</button>
+                  ))}
+                </div>
+              </div>
+              <div style={S.growthGrid}>
+                <GrowthCard label="Power" series={powerSeries} days={windowDays} fmt={fmtNum} />
+                <GrowthCard label="Total contrib." series={totalSeries} days={windowDays} fmt={fmtNum} />
+                <GrowthCard label="Conquest DMG" series={dmgSeries} days={windowDays} fmt={fmtNum} />
+                <GrowthCard label="Gear (avg +)" series={gearSeries} days={windowDays} fmt={fmtGear} />
+              </div>
+              {powerSeries.length >= 2 && (
+                <div style={S.trendCard}>
+                  <div style={S.trendHead}>
+                    <span>Power trend</span>
+                    <span style={S.trendVals}>{fmtNum(powerSeries[0].value)} → {fmtNum(powerSeries[powerSeries.length - 1].value)}</span>
+                  </div>
+                  <Sparkline series={powerSeries} />
+                  <div style={S.trendAxis}>
+                    <span>{fmtDate(powerSeries[0].date)}</span>
+                    <span>{fmtDate(powerSeries[powerSeries.length - 1].date)}</span>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* ── Standing in the guild ── */}
+            {me && (
+              <div style={S.pmSection}>
+                <div style={S.pmSectionLabel}>Standing in the guild</div>
+                <div style={S.standWrap}>
+                  <StandingRow label="Power" value={me.power} info={guild.stat.power} fmt={fmtNum} />
+                  {me.dmg != null && <StandingRow label="Conquest DMG" value={me.dmg} info={guild.stat.dmg} fmt={fmtNum} />}
+                  {COMBAT_STATS.map(([k, lbl]) => (
+                    <StandingRow key={k} label={lbl} value={me[k]} info={guild.stat[k]} fmt={fmtNum} />
+                  ))}
+                </div>
               </div>
             )}
 
-            <div style={S.pmInfo}>
-              <div style={S.pmName}>{p.name}</div>
-              <div style={S.pmSub}>
-                {p.class}{p.classLevel != null ? ` · Class Lv. ${p.classLevel}` : ""}{p.level != null ? ` · Lv. ${p.level}` : ""}
-              </div>
-              <div style={S.pmId}>ID: {p.playerId}</div>
-              {PROFILE_META.capturedAt && <span style={S.pmUpdated}>Updated {fmtDate(PROFILE_META.capturedAt)}</span>}
-
-              <div style={S.pmBadges}>
-                {p.rank && <span style={S.pmBadge}>{p.rank}</span>}
-                {p.guildTitle && <span style={S.pmBadge}>{p.guildTitle}</span>}
-                {p.serverBadge && <span style={S.pmBadge}>{p.serverBadge}</span>}
-                {p.fantomon && <span style={{ ...S.pmBadge, ...S.pmBadgeAccent }}>Fantomon: {p.fantomon}</span>}
-                {p.likes != null && <span style={S.pmBadge}>♥ {p.likes}</span>}
-              </div>
-
-              <div style={S.pmPowerRow}>
-                <span style={S.pmPowerLabel}>POWER</span>
-                <span style={S.pmPowerValue}>{p.power}</span>
-              </div>
-
-              <div style={S.pmSectionLabel}>Stats</div>
-              <div style={S.pmStatGrid}>
-                <PmStat label="ATK" value={p.stats?.atk} />
-                <PmStat label="DEF" value={p.stats?.def} />
-                <PmStat label="HP" value={p.stats?.hp} />
-                <PmStat label="SPD" value={p.stats?.spd} />
-              </div>
-
-              <div style={S.pmSectionLabel}>Gear</div>
-              <div style={S.pmGearGrid}>
-                {GEAR_SLOTS.map(([k, label]) => (
-                  <div key={k} style={S.pmGear}>
-                    <div style={S.pmGearLvl}>+{p.gear?.[k] ?? "—"}</div>
-                    <div style={S.pmGearLabel}>{label}</div>
+            {/* ── Head-to-head ── */}
+            {me && others.length > 0 && (
+              <div style={S.pmSection}>
+                <div style={S.pmSectionHead}>
+                  <span style={S.pmSectionLabel}>Compare with</span>
+                  <select style={S.cmpSelect} value={compareKey} onChange={(e) => setCompareKey(e.target.value)}>
+                    <option value="">Pick a member…</option>
+                    {others.map((m) => <option key={m.key} value={m.key}>{m.name}</option>)}
+                  </select>
+                </div>
+                {other && (
+                  <div style={S.cmpTable}>
+                    <div style={S.cmpRow}>
+                      <span style={S.cmpLabel} />
+                      <span style={{ ...S.cmpCell, color: C.accent }}>{displayName}</span>
+                      <span style={{ ...S.cmpCell, color: C.accent2 }}>{other.name}</span>
+                    </div>
+                    {CMP_METRICS.map(([k, lbl]) => {
+                      const a = me[k], b = other[k];
+                      if (a == null && b == null) return null;
+                      return (
+                        <div key={k} style={S.cmpRow}>
+                          <span style={S.cmpLabel}>{lbl}</span>
+                          <span style={{ ...S.cmpCell, ...(a != null && b != null && a > b ? S.cmpWin : {}) }}>{a != null ? fmtNum(a) : "—"}</span>
+                          <span style={{ ...S.cmpCell, ...(a != null && b != null && b > a ? S.cmpWin : {}) }}>{b != null ? fmtNum(b) : "—"}</span>
+                        </div>
+                      );
+                    })}
                   </div>
-                ))}
+                )}
               </div>
-            </div>
-          </div>
+            )}
+
+            {(p?.playerId || PROFILE_META.capturedAt) && (
+              <div style={S.pmFooter}>
+                {p?.playerId && <span>Player ID · {p.playerId}</span>}
+                {PROFILE_META.capturedAt && <span style={S.pmUpdated}>Updated {fmtDate(PROFILE_META.capturedAt)}</span>}
+              </div>
+            )}
+          </>
         )}
       </div>
 
       {zoomed && p?.image && (
         <div style={S.pmZoom} onClick={(e) => { e.stopPropagation(); setZoomed(false); }}>
-          <img src={p.image} alt={`${p.name} profile`} style={S.pmZoomImg} />
+          <img src={p.image} alt={`${displayName} profile`} style={S.pmZoomImg} />
         </div>
       )}
-    </div>
-  );
-}
-function PmStat({ label, value }) {
-  return (
-    <div style={S.pmStat}>
-      <div style={S.pmStatValue}>{value ?? "—"}</div>
-      <div style={S.pmStatLabel}>{label}</div>
     </div>
   );
 }
@@ -513,6 +755,13 @@ function tabStyle(on) {
     fontFamily: F.display, fontWeight: 600, fontSize: 13, cursor: "pointer",
   };
 }
+function segStyle(on) {
+  return {
+    background: on ? C.accent : "transparent", color: on ? "#06231a" : C.dim,
+    border: "none", borderRadius: 6, padding: "5px 12px", minWidth: 44,
+    fontFamily: F.display, fontWeight: 600, fontSize: 12, cursor: "pointer",
+  };
+}
 
 // ── Theme ──────────────────────────────────────────────────────────────────────
 const C = {
@@ -535,6 +784,12 @@ select option { background: ${C.panel}; }
 .pname { transition: color .12s; }
 .pname:hover { color: ${C.accent}; text-decoration: underline; }
 @keyframes pmIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+/* Side-by-side modal: pin the screenshot to the info column's height, cropping
+   from the top so it ends level with the gear cards. Stacks full-height below. */
+@media (min-width: 520px) {
+  .pm-shot-wrap { align-self: stretch; }
+  .pm-shot { position: absolute; inset: 0; width: 100%; height: 100%; }
+}
 `;
 const S = {
   shell: { background: C.bg, color: C.ink, fontFamily: F.body, padding: "20px clamp(12px,3vw,28px)", minHeight: "100%", borderRadius: 14 },
@@ -591,15 +846,20 @@ const S = {
   modalOverlay: { position: "fixed", inset: 0, background: "rgba(0,0,0,.66)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16, zIndex: 50 },
   pmCard: { position: "relative", background: C.panel, border: `1px solid ${C.line}`, borderRadius: 16, padding: 20, width: "min(680px,100%)", maxHeight: "90vh", overflowY: "auto", animation: "pmIn .16s ease-out" },
   pmClose: { position: "absolute", top: 12, right: 12, background: "transparent", color: C.dim, border: `1px solid ${C.line}`, borderRadius: 8, width: 30, height: 30, cursor: "pointer", fontSize: 13, lineHeight: 1, zIndex: 1 },
-  pmBody: { display: "flex", flexWrap: "wrap", gap: 18 },
-  pmShotWrap: { flex: "0 0 auto", width: 168, maxWidth: "100%", margin: "0 auto" },
-  pmShot: { width: "100%", borderRadius: 12, border: `1px solid ${C.line}`, display: "block", cursor: "zoom-in" },
-  pmShotCaption: { fontSize: 10, color: C.faint, textAlign: "center", marginTop: 4 },
+  pmBody: { display: "flex", flexWrap: "wrap", gap: 20, alignItems: "flex-start" },
+  pmShotWrap: { flex: "0 0 auto", width: 200, maxWidth: "100%", margin: "0 auto", position: "relative", borderRadius: 14, overflow: "hidden", border: `1px solid ${C.line}`, boxShadow: "0 6px 24px rgba(0,0,0,.45)" },
+  pmShot: { display: "block", width: "100%", cursor: "zoom-in", objectFit: "cover", objectPosition: "top center" },
+  pmShotCaption: { position: "absolute", left: 0, right: 0, bottom: 0, fontSize: 10, color: C.ink, textAlign: "center", padding: "10px 4px 4px", background: "linear-gradient(to top, rgba(0,0,0,.72), transparent)", pointerEvents: "none" },
   pmInfo: { flex: 1, minWidth: 220 },
-  pmName: { fontFamily: F.display, fontWeight: 700, fontSize: 24, letterSpacing: -0.3, paddingRight: 34 },
-  pmSub: { color: C.accent2, fontSize: 13, fontWeight: 600, marginTop: 2 },
-  pmId: { color: C.faint, fontFamily: F.mono, fontSize: 11, marginTop: 4 },
-  pmUpdated: { display: "inline-block", marginTop: 8, fontSize: 10, fontWeight: 600, letterSpacing: 0.3, padding: "3px 9px", borderRadius: 999, background: C.panel2, border: `1px solid ${C.line}`, color: C.dim },
+  pmNameRow: { display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", paddingRight: 34 },
+  pmName: { fontFamily: F.display, fontWeight: 700, fontSize: "clamp(26px,5vw,32px)", letterSpacing: -0.4, lineHeight: 1.1 },
+  pmLevelBadge: { fontFamily: F.display, fontWeight: 700, fontSize: 13, padding: "4px 11px", borderRadius: 999, background: "rgba(124,242,196,.12)", border: "1px solid #27503f", color: C.accent, whiteSpace: "nowrap" },
+  pmClassRow: { display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginTop: 6 },
+  pmClass: { color: C.accent2, fontFamily: F.display, fontSize: 17, fontWeight: 600 },
+  pmClassBadge: { fontFamily: F.mono, fontWeight: 600, fontSize: 11, padding: "3px 9px", borderRadius: 999, background: "rgba(185,140,255,.12)", border: "1px solid #3d2c5c", color: C.accent2, whiteSpace: "nowrap" },
+  pmId: { color: C.faint, fontFamily: F.mono, fontSize: 11 },
+  pmUpdated: { display: "inline-block", fontSize: 10, fontWeight: 600, letterSpacing: 0.3, padding: "3px 9px", borderRadius: 999, background: C.panel2, border: `1px solid ${C.line}`, color: C.dim },
+  pmFooter: { marginTop: 18, paddingTop: 14, borderTop: `1px solid ${C.line}`, display: "flex", alignItems: "center", justifyContent: "center", gap: 12, flexWrap: "wrap", fontFamily: F.mono, fontSize: 11, letterSpacing: 0.5, color: C.faint },
   pmBadges: { display: "flex", flexWrap: "wrap", gap: 6, marginTop: 12 },
   pmBadge: { fontSize: 11, fontWeight: 600, padding: "3px 9px", borderRadius: 999, background: C.panel2, border: `1px solid ${C.line}`, color: C.dim },
   pmBadgeAccent: { color: C.accent, borderColor: "#27503f" },
@@ -617,4 +877,36 @@ const S = {
   pmGearLabel: { fontSize: 9, letterSpacing: 0.5, color: C.dim, marginTop: 2 },
   pmZoom: { position: "fixed", inset: 0, background: "rgba(0,0,0,.88)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16, zIndex: 60, cursor: "zoom-out" },
   pmZoomImg: { maxWidth: "96vw", maxHeight: "92vh", borderRadius: 12, boxShadow: "0 8px 40px rgba(0,0,0,.6)" },
+
+  // ── Modal: advanced sections (growth / standing / compare) ──
+  pmSection: { marginTop: 18, paddingTop: 16, borderTop: `1px solid ${C.line}` },
+  pmSectionHead: { display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, flexWrap: "wrap", marginBottom: 10 },
+  seg: { display: "inline-flex", gap: 2, background: C.panel2, border: `1px solid ${C.line}`, borderRadius: 8, padding: 2 },
+  growthGrid: { display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(130px,1fr))", gap: 8 },
+  growthCard: { background: C.panel2, border: `1px solid ${C.line}`, borderRadius: 12, padding: "12px 14px" },
+  growthLabel: { fontFamily: F.mono, fontSize: 10, letterSpacing: 1, textTransform: "uppercase", color: C.dim },
+  growthValue: { fontFamily: F.display, fontWeight: 700, fontSize: 20, marginTop: 4 },
+  growthDelta: { fontFamily: F.mono, fontSize: 13, fontWeight: 600, marginTop: 4 },
+  growthPct: { fontWeight: 600 },
+  growthBase: { fontSize: 10, color: C.faint, marginTop: 3 },
+  trendCard: { background: C.panel2, border: `1px solid ${C.line}`, borderRadius: 12, padding: "12px 14px", marginTop: 8 },
+  trendHead: { display: "flex", justifyContent: "space-between", alignItems: "baseline", fontFamily: F.mono, fontSize: 11, color: C.dim, marginBottom: 8 },
+  trendVals: { color: C.ink, fontWeight: 600 },
+  trendAxis: { display: "flex", justifyContent: "space-between", fontSize: 10, color: C.faint, marginTop: 4 },
+  standWrap: { display: "flex", flexDirection: "column", gap: 12 },
+  standRow: {},
+  standHead: { display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 5 },
+  standLabel: { fontFamily: F.mono, fontSize: 11, letterSpacing: 0.5, textTransform: "uppercase", color: C.dim },
+  standValue: { fontFamily: F.mono, fontSize: 14, fontWeight: 600, color: C.ink },
+  standBar: { position: "relative", height: 8, background: C.panel2, border: `1px solid ${C.line}`, borderRadius: 999, overflow: "hidden" },
+  standFill: { position: "absolute", left: 0, top: 0, bottom: 0, background: C.accent, borderRadius: 999 },
+  standAvg: { position: "absolute", top: -2, bottom: -2, width: 2, background: C.accent2, opacity: 0.85 },
+  standMeta: { display: "flex", justifyContent: "space-between", alignItems: "center", fontFamily: F.mono, fontSize: 11, marginTop: 5 },
+  rankChip: { color: C.dim, background: C.panel2, border: `1px solid ${C.line}`, borderRadius: 999, padding: "2px 8px" },
+  cmpSelect: { background: C.panel2, color: C.ink, border: `1px solid ${C.line}`, borderRadius: 8, padding: "6px 10px", fontFamily: F.body, fontSize: 13, outline: "none", maxWidth: "60%" },
+  cmpTable: { border: `1px solid ${C.line}`, borderRadius: 12, overflow: "hidden" },
+  cmpRow: { display: "grid", gridTemplateColumns: "1fr 1fr 1fr", alignItems: "center", padding: "9px 12px", borderTop: `1px solid ${C.line}` },
+  cmpLabel: { fontFamily: F.mono, fontSize: 11, letterSpacing: 0.5, textTransform: "uppercase", color: C.dim },
+  cmpCell: { fontFamily: F.mono, fontSize: 13, fontWeight: 600, textAlign: "right", color: C.dim },
+  cmpWin: { color: C.ink, background: "rgba(124,242,196,.08)" },
 };

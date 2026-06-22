@@ -1,7 +1,7 @@
 // ── Raw paste parser ───────────────────────────────────────────────────────────
 // Converts pasted text (one player per line, columns separated by tab, comma, or
 // two+ spaces) into the row objects a weekly file expects. Used when turning a raw
-// data drop into a new src/data/weeks/week-NN.js file. Values stay as raw strings
+// data drop into a new captures/<date>/week.json file. Values stay as raw strings
 // (e.g. "1.99M") — the model normalises them at load time.
 //
 //   parseRoster(text)   -> [{ name, power, rank, week, total, login, role }, ...]
