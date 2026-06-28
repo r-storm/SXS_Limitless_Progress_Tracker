@@ -33,15 +33,14 @@ export default function GuildTracker() {
           <nav style={S.tabs}>
             <button style={tabStyle(tab === "roster")} onClick={() => setTab("roster")}>Roster</button>
             <button style={tabStyle(tab === "conquest")} onClick={() => setTab("conquest")}>Conquest DMG</button>
+            <button style={tabStyle(tab === "rankings")} onClick={() => setTab("rankings")}>Rankings</button>
           </nav>
         </div>
       </header>
 
-      {tab === "roster" ? (
-        <RosterView snaps={ROSTER_SNAPS} firstSeen={ROSTER_FIRST_SEEN} onPlayerClick={setProfileKey} />
-      ) : (
-        <ConquestView snaps={CONQUEST_SNAPS} firstSeen={CONQUEST_FIRST_SEEN} onPlayerClick={setProfileKey} />
-      )}
+      {tab === "roster" && <RosterView snaps={ROSTER_SNAPS} firstSeen={ROSTER_FIRST_SEEN} onPlayerClick={setProfileKey} />}
+      {tab === "conquest" && <ConquestView snaps={CONQUEST_SNAPS} firstSeen={CONQUEST_FIRST_SEEN} onPlayerClick={setProfileKey} />}
+      {tab === "rankings" && <RankingsView rosterSnaps={ROSTER_SNAPS} conquestSnaps={CONQUEST_SNAPS} onPlayerClick={setProfileKey} />}
 
       {profileKey && <PlayerModal playerKey={profileKey} onClose={() => setProfileKey(null)} />}
     </div>
@@ -79,7 +78,7 @@ function SnapBar({ snaps, activeId, setActiveId, compareId, setCompareId, query,
             ))}
           </select>
         </div>
-        <input style={S.search} placeholder="Search name…" value={query} onChange={(e) => setQuery(e.target.value)} />
+        {setQuery && <input style={S.search} placeholder="Search name…" value={query} onChange={(e) => setQuery(e.target.value)} />}
         <div style={{ flex: 1 }} />
       </div>
       <div style={S.hint}>Tip: tap a player's name to view their full profile.</div>
@@ -105,36 +104,9 @@ function RosterView({ snaps, firstSeen, onPlayerClick }) {
 
   const totals = useMemo(() => {
     const present = active.rows.filter((r) => currentKeys.has(r.key));
-    return { members: present.length, power: present.reduce((s, r) => s + r.power, 0) };
+    const power = present.reduce((s, r) => s + r.power, 0);
+    return { members: present.length, power, avgPower: present.length ? Math.round(power / present.length) : 0 };
   }, [active, currentKeys]);
-
-  const widgets = useMemo(() => {
-    const present = active.rows.filter((r) => currentKeys.has(r.key));
-    if (!present.length) return null;
-    const totalPower = present.reduce((s, r) => s + r.power, 0);
-    const gainers = present.map((r) => ({ ...r, d: cmap[r.key] ? r.power - cmap[r.key].power : null })).filter((r) => r.d != null);
-    const classCount = {};
-    const withStats = [];
-    for (const r of present) {
-      const pr = getProfile(r.key);
-      if (pr?.class) classCount[pr.class] = (classCount[pr.class] || 0) + 1;
-      if (pr?.stats) withStats.push({ key: r.key, name: r.name, atk: parseNum(pr.stats.atk), def: parseNum(pr.stats.def), hp: parseNum(pr.stats.hp), spd: parseNum(pr.stats.spd) });
-    }
-    return {
-      count: present.length,
-      totalPower,
-      avgPower: Math.round(totalPower / present.length),
-      byPower: topN(present, (r) => r.power),
-      byWeek: topN(present, (r) => r.week),
-      byTotal: topN(present, (r) => r.total),
-      byGain: gainers.length ? topN(gainers, (r) => r.d) : [],
-      byAtk: topN(withStats, (r) => r.atk),
-      byDef: topN(withStats, (r) => r.def),
-      byHp: topN(withStats, (r) => r.hp),
-      bySpd: topN(withStats.filter((r) => r.spd > 0), (r) => r.spd),
-      classes: Object.entries(classCount).sort((a, b) => b[1] - a[1]),
-    };
-  }, [active, currentKeys, cmap]);
 
   const isFirstSnap = snaps[0].id === active.id;
   const rows = useMemo(() => {
@@ -174,7 +146,7 @@ function RosterView({ snaps, firstSeen, onPlayerClick }) {
       <div style={S.headStats}>
         <Stat label="Members" value={totals.members} />
         <Stat label="Total power" value={fmtNum(totals.power)} />
-        {widgets && <Stat label="Avg power" value={fmtNum(widgets.avgPower)} />}
+        {totals.members > 0 && <Stat label="Avg power" value={fmtNum(totals.avgPower)} />}
         <Stat label="Snapshots" value={snaps.length} />
       </div>
       <SnapBar snaps={snaps} activeId={activeId} setActiveId={setActiveId} compareId={compareId} setCompareId={setCompareId}
@@ -212,24 +184,6 @@ function RosterView({ snaps, firstSeen, onPlayerClick }) {
             </tbody>
           </table>
         </div>
-
-        {widgets && (
-          <aside style={S.side}>
-            <TopList icon={<IconZap />} title="Strongest" items={widgets.byPower} render={(r) => fmtNum(r.power)} onPlayerClick={onPlayerClick} />
-            {widgets.byGain.length > 0 && <TopList icon={<IconTrendingUp />} title="Biggest power gain" items={widgets.byGain} render={(r) => `${r.d > 0 ? "+" : ""}${fmtNum(r.d)}`} onPlayerClick={onPlayerClick} />}
-            <TopList icon={<IconFlame />} title="Top contribution this week" items={widgets.byWeek} render={(r) => fmtNum(r.week)} onPlayerClick={onPlayerClick} />
-            <TopList icon={<IconTrophy />} title="Most total contrib." items={widgets.byTotal} render={(r) => fmtNum(r.total)} onPlayerClick={onPlayerClick} />
-            <TopList icon={<IconSword />} title="Highest attack" items={widgets.byAtk} render={(r) => fmtNum(r.atk)} onPlayerClick={onPlayerClick} />
-            <TopList icon={<IconShield />} title="Highest defense" items={widgets.byDef} render={(r) => fmtNum(r.def)} onPlayerClick={onPlayerClick} />
-            <TopList icon={<IconHeart />} title="Highest HP" items={widgets.byHp} render={(r) => fmtNum(r.hp)} onPlayerClick={onPlayerClick} />
-            <TopList icon={<IconGauge />} title="Highest speed" items={widgets.bySpd} render={(r) => fmtNum(r.spd)} onPlayerClick={onPlayerClick} />
-            {widgets.classes.length > 0 && (
-              <SideCard title="Class split">
-                {widgets.classes.map(([c, n]) => <ClassBar key={c} name={c} count={n} total={widgets.count} />)}
-              </SideCard>
-            )}
-          </aside>
-        )}
       </div>
     </>
   );
@@ -253,24 +207,15 @@ function ConquestView({ snaps, firstSeen, onPlayerClick }) {
 
   const totals = useMemo(() => {
     const present = active.rows.filter((r) => currentKeys.has(r.key));
-    return { members: present.length, dmg: present.reduce((s, r) => s + r.dmg, 0) };
-  }, [active, currentKeys]);
-
-  const widgets = useMemo(() => {
-    const present = active.rows.filter((r) => currentKeys.has(r.key));
-    if (!present.length) return null;
-    const totalDmg = present.reduce((s, r) => s + r.dmg, 0);
-    const byDmg = topN(present, (r) => r.dmg);
-    const gainers = present.map((r) => ({ ...r, d: cmap[r.key] ? r.dmg - cmap[r.key].dmg : null })).filter((r) => r.d != null);
+    const dmg = present.reduce((s, r) => s + r.dmg, 0);
+    const maxDmg = present.reduce((m, r) => Math.max(m, r.dmg), 0);
     return {
-      count: present.length,
-      totalDmg,
-      avgDmg: Math.round(totalDmg / present.length),
-      topShare: Math.round((byDmg[0].dmg / totalDmg) * 100),
-      byDmg,
-      byGain: gainers.length ? topN(gainers, (r) => r.d) : [],
+      members: present.length,
+      dmg,
+      avgDmg: present.length ? Math.round(dmg / present.length) : 0,
+      topShare: dmg ? Math.round((maxDmg / dmg) * 100) : 0,
     };
-  }, [active, currentKeys, cmap]);
+  }, [active, currentKeys]);
 
   const isFirstSnap = snaps[0].id === active.id;
   const rows = useMemo(() => {
@@ -298,8 +243,8 @@ function ConquestView({ snaps, firstSeen, onPlayerClick }) {
       <div style={S.headStats}>
         <Stat label="Players" value={totals.members} />
         <Stat label="Total DMG" value={fmtNum(totals.dmg)} />
-        {widgets && <Stat label="Avg DMG" value={fmtNum(widgets.avgDmg)} />}
-        {widgets && <Stat label="Top share" value={`${widgets.topShare}%`} />}
+        {totals.members > 0 && <Stat label="Avg DMG" value={fmtNum(totals.avgDmg)} />}
+        {totals.members > 0 && <Stat label="Top share" value={`${totals.topShare}%`} />}
         <Stat label="Snapshots" value={snaps.length} />
       </div>
       <SnapBar snaps={snaps} activeId={activeId} setActiveId={setActiveId} compareId={compareId} setCompareId={setCompareId}
@@ -331,15 +276,110 @@ function ConquestView({ snaps, firstSeen, onPlayerClick }) {
             </tbody>
           </table>
         </div>
-
-        {widgets && (
-          <aside style={S.side}>
-            <TopList icon={<IconTarget />} title="Top damage" items={widgets.byDmg} render={(r) => fmtNum(r.dmg)} onPlayerClick={onPlayerClick} />
-            {widgets.byGain.length > 0 && <TopList icon={<IconTrendingUp />} title="Biggest increase" items={widgets.byGain} render={(r) => `${r.d > 0 ? "+" : ""}${fmtNum(r.d)}`} onPlayerClick={onPlayerClick} />}
-          </aside>
-        )}
       </div>
     </>
+  );
+}
+
+// ── Rankings tab · Hall of Champions ─────────────────────────────────────────────
+// The leaderboards reframed as an honours hall: a crowned podium for the top three,
+// an honour roll for the rest, and medal-tiered category boards. Each dataset
+// (roster, conquest) keeps its own snapshot + compare selector.
+function RankingsView({ rosterSnaps, conquestSnaps, onPlayerClick }) {
+  return (
+    <div className="rank-scope" style={S.rankWrap}>
+      <header style={S.hallHero}>
+        <div style={S.hallHeroKicker}>LIMITLESS · SWORD × STAFF</div>
+        <h1 style={S.hallHeroTitle}>Hall of Champions</h1>
+        <p style={S.hallHeroSub}>Every name here earned its place. Tap a champion to see how they stack up.</p>
+      </header>
+      <RankingSection
+        kind="roster" snaps={rosterSnaps} onPlayerClick={onPlayerClick}
+        kicker="Power Rankings" title="The Strongest"
+        subtitle="The mightiest members of Limitless, ranked by total power."
+        championLabel="Guild Champion"
+      />
+      {conquestSnaps.length > 0 && (
+        <RankingSection
+          kind="conquest" snaps={conquestSnaps} onPlayerClick={onPlayerClick}
+          kicker="Conquest Rankings" title="Top Damage"
+          subtitle="The biggest hitters in Conquest."
+          championLabel="Conquest Champion"
+        />
+      )}
+    </div>
+  );
+}
+
+function RankingSection({ kind, snaps, onPlayerClick, kicker, title, subtitle, championLabel }) {
+  const { activeId, setActiveId, compareId, setCompareId } = useSnapshotState(snaps);
+  const active = snaps.find((s) => s.id === activeId);
+  const compare = snaps.find((s) => s.id === compareId) || null;
+  const cmap = useMemo(() => { const m = {}; if (compare) compare.rows.forEach((r) => { m[r.key] = r; }); return m; }, [compare]);
+
+  // Same visibility rule as the dashboard tables: only current, non-left members.
+  const currentKeys = useMemo(() => new Set(snaps[snaps.length - 1].rows.map((r) => r.key).filter((k) => !hasLeft(k))), [snaps]);
+  const present = useMemo(() => active.rows.filter((r) => currentKeys.has(r.key)), [active, currentKeys]);
+  const r = useMemo(() => (kind === "roster" ? rosterRankings(present, cmap) : conquestRankings(present, cmap)), [kind, present, cmap]);
+
+  const marquee = kind === "roster" ? r?.byPower : r?.byDmg;        // headline board
+  const value = kind === "roster" ? ((x) => x.power) : ((x) => x.dmg);
+  const gainFmt = (d) => `${d > 0 ? "+" : ""}${fmtNum(d)}`;
+
+  return (
+    <section style={S.hall}>
+      <div style={S.hallHead}>
+        <div style={S.hallKicker}>{kicker}</div>
+        <h2 style={S.hallTitle}>{title}</h2>
+        <p style={S.hallSub}>{subtitle}</p>
+      </div>
+      <SnapBar snaps={snaps} activeId={activeId} setActiveId={setActiveId} compareId={compareId} setCompareId={setCompareId} />
+      {compare && <div style={S.diffNote}>Gain boards compare <b>{fmtDate(active.capturedAt)}</b> against <b>{fmtDate(compare.capturedAt)}</b>.</div>}
+
+      {!r || !marquee.length ? (
+        <div style={S.empty}>No data for this snapshot.</div>
+      ) : (
+        <>
+          <Podium items={marquee} value={value} fmt={fmtNum} championLabel={championLabel} runnerLabels={["Runner-up", "Third place"]} onPlayerClick={onPlayerClick} />
+          {marquee.length > 3 && (
+            <>
+              <div style={S.rollHead}>Ranks 4–{marquee.length}</div>
+              <HonorRoll items={marquee.slice(3)} value={value} fmt={fmtNum} startRank={4} onPlayerClick={onPlayerClick} />
+            </>
+          )}
+
+          {kind === "roster" ? (
+            <>
+              <div style={S.boardsHead}>Category leaders</div>
+              <div style={S.rankGrid}>
+                {r.byGain.length > 0 && <RankBoard icon={<IconTrendingUp />} title="Biggest power gain" items={r.byGain} value={(x) => x.d} fmt={gainFmt} onPlayerClick={onPlayerClick} />}
+                <RankBoard icon={<IconFlame />} title="Top contribution this week" items={r.byWeek} value={(x) => x.week} fmt={fmtNum} onPlayerClick={onPlayerClick} />
+                <RankBoard icon={<IconTrophy />} title="Most total contrib." items={r.byTotal} value={(x) => x.total} fmt={fmtNum} onPlayerClick={onPlayerClick} />
+                <RankBoard icon={<IconSword />} title="Highest attack" items={r.byAtk} value={(x) => x.atk} fmt={fmtNum} onPlayerClick={onPlayerClick} />
+                <RankBoard icon={<IconShield />} title="Highest defense" items={r.byDef} value={(x) => x.def} fmt={fmtNum} onPlayerClick={onPlayerClick} />
+                <RankBoard icon={<IconHeart />} title="Highest HP" items={r.byHp} value={(x) => x.hp} fmt={fmtNum} onPlayerClick={onPlayerClick} />
+                <RankBoard icon={<IconGauge />} title="Highest speed" items={r.bySpd} value={(x) => x.spd} fmt={fmtNum} onPlayerClick={onPlayerClick} />
+                {r.classes.length > 0 && (
+                  <div className="board rank-rise">
+                    <div className="board-head"><span>Class split</span></div>
+                    {r.classes.map(([c, n]) => <ClassBar key={c} name={c} count={n} total={r.count} />)}
+                  </div>
+                )}
+              </div>
+            </>
+          ) : (
+            r.byGain.length > 0 && (
+              <>
+                <div style={S.boardsHead}>Category leaders</div>
+                <div style={S.rankGrid}>
+                  <RankBoard icon={<IconTrendingUp />} title="Biggest increase" items={r.byGain} value={(x) => x.d} fmt={gainFmt} onPlayerClick={onPlayerClick} />
+                </div>
+              </>
+            )
+          )}
+        </>
+      )}
+    </section>
   );
 }
 
@@ -685,11 +725,9 @@ function PlayerModal({ playerKey, onClose }) {
 
 // ── Icons (inline, stroke inherits text color) ───────────────────────────────────
 const ICON = { width: 14, height: 14, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: 2, strokeLinecap: "round", strokeLinejoin: "round", "aria-hidden": true };
-const IconZap = () => <svg {...ICON}><path d="M13 2 3 14h9l-1 8 10-12h-9l1-8z" /></svg>;
 const IconTrendingUp = () => <svg {...ICON}><polyline points="22 7 13.5 15.5 8.5 10.5 2 17" /><polyline points="16 7 22 7 22 13" /></svg>;
 const IconFlame = () => <svg {...ICON}><path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z" /></svg>;
 const IconTrophy = () => <svg {...ICON}><path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6" /><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18" /><path d="M4 22h16" /><path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22" /><path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22" /><path d="M18 2H6v7a6 6 0 0 0 12 0V2Z" /></svg>;
-const IconTarget = () => <svg {...ICON}><circle cx="12" cy="12" r="10" /><circle cx="12" cy="12" r="6" /><circle cx="12" cy="12" r="2" /></svg>;
 const IconSword = () => <svg {...ICON}><polyline points="14.5 17.5 3 6 3 3 6 3 17.5 14.5" /><line x1="13" y1="19" x2="19" y2="13" /><line x1="16" y1="16" x2="20" y2="20" /><line x1="19" y1="21" x2="21" y2="19" /></svg>;
 const IconShield = () => <svg {...ICON}><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z" /></svg>;
 const IconHeart = () => <svg {...ICON}><path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z" /></svg>;
@@ -699,21 +737,152 @@ const IconGauge = () => <svg {...ICON}><path d="m12 14 4-4" /><path d="M3.34 19a
 function topN(arr, f, n = 5) {
   return [...arr].sort((a, b) => f(b) - f(a)).slice(0, n);
 }
-function SideCard({ title, children }) {
-  return <div style={S.sideCard}><div style={S.sideCardTitle}>{title}</div>{children}</div>;
+
+// Leaderboard data for the Rankings tab. `present` is the current (non-left)
+// members of the chosen snapshot; `cmap` maps key -> the compared snapshot's row,
+// powering the "biggest gain" boards. Returns null when there's nothing to rank.
+function rosterRankings(present, cmap) {
+  if (!present.length) return null;
+  const gainers = present.map((r) => ({ ...r, d: cmap[r.key] ? r.power - cmap[r.key].power : null })).filter((r) => r.d != null);
+  const classCount = {};
+  const withStats = [];
+  for (const r of present) {
+    const pr = getProfile(r.key);
+    if (pr?.class) classCount[pr.class] = (classCount[pr.class] || 0) + 1;
+    if (pr?.stats) withStats.push({ key: r.key, name: r.name, atk: parseNum(pr.stats.atk), def: parseNum(pr.stats.def), hp: parseNum(pr.stats.hp), spd: parseNum(pr.stats.spd) });
+  }
+  return {
+    count: present.length,
+    byPower: topN(present, (r) => r.power, 10),
+    byGain: gainers.length ? topN(gainers, (r) => r.d) : [],
+    byWeek: topN(present, (r) => r.week),
+    byTotal: topN(present, (r) => r.total),
+    byAtk: topN(withStats, (r) => r.atk),
+    byDef: topN(withStats, (r) => r.def),
+    byHp: topN(withStats, (r) => r.hp),
+    bySpd: topN(withStats.filter((r) => r.spd > 0), (r) => r.spd),
+    classes: Object.entries(classCount).sort((a, b) => b[1] - a[1]),
+  };
 }
-function TopList({ icon, title, items, render, onPlayerClick }) {
+
+function conquestRankings(present, cmap) {
+  if (!present.length) return null;
+  const gainers = present.map((r) => ({ ...r, d: cmap[r.key] ? r.dmg - cmap[r.key].dmg : null })).filter((r) => r.d != null);
+  return {
+    count: present.length,
+    byDmg: topN(present, (r) => r.dmg, 10),
+    byGain: gainers.length ? topN(gainers, (r) => r.d) : [],
+  };
+}
+// ── Rankings: Hall of Champions building blocks ─────────────────────────────────
+function prefersReducedMotion() {
+  return typeof window !== "undefined" && window.matchMedia
+    ? window.matchMedia("(prefers-reduced-motion: reduce)").matches
+    : false;
+}
+
+// Ease a number from 0 up to `target` once, for the ceremonial reveal. Honours
+// reduced-motion by jumping straight to the final value.
+function useCountUp(target, ms = 950) {
+  const [v, setV] = useState(() => (prefersReducedMotion() ? target : 0));
+  useEffect(() => {
+    if (prefersReducedMotion()) { setV(target); return; }
+    let raf, start = null;
+    const tick = (t) => {
+      if (start == null) start = t;
+      const p = Math.min(1, (t - start) / ms);
+      setV(target * (1 - Math.pow(1 - p, 3)));
+      if (p < 1) raf = requestAnimationFrame(tick);
+    };
+    setV(0);
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [target, ms]);
+  return v;
+}
+
+function Crown() {
+  return (
+    <svg className="crown" width="32" height="20" viewBox="0 0 24 16" fill="currentColor" aria-hidden="true">
+      <path d="M2 14.5 3 5l5.5 4L12 2.5 15.5 9 21 5l1 9.5z" />
+      <rect x="2" y="13.5" width="20" height="2" rx="1" />
+    </svg>
+  );
+}
+
+function Medal({ rank, size = 40 }) {
+  return (
+    <span className={`medal medal-${rank}`} style={{ width: size, height: size, fontSize: Math.round(size * 0.42) }}>
+      <span>{rank}</span>
+    </span>
+  );
+}
+
+function PodiumValue({ target, fmt }) {
+  const v = useCountUp(target);
+  return <span className="ped-val">{fmt(Math.round(v))}</span>;
+}
+
+// Top-3 dais. `value` reads the ranked metric off an item; items must be sorted.
+function Podium({ items, value, fmt, championLabel, runnerLabels, onPlayerClick }) {
+  return (
+    <div className="podium">
+      {items.slice(0, 3).map((it, i) => (
+        <button
+          key={it.key}
+          className={`ped rank-rise ped-${i + 1}${i === 0 ? " ped-champion" : ""}`}
+          style={{ animationDelay: `${i * 90}ms` }}
+          onClick={() => onPlayerClick(it.key)}
+        >
+          {i === 0 && <Crown />}
+          <Medal rank={i + 1} size={i === 0 ? 54 : 42} />
+          <span className="ped-name">{it.name}</span>
+          <PodiumValue target={value(it)} fmt={fmt} />
+          <span className="ped-label">{i === 0 ? championLabel : runnerLabels[i - 1]}</span>
+        </button>
+      ))}
+    </div>
+  );
+}
+
+// Ranks 4..N below the dais — still an honour to make the list.
+function HonorRoll({ items, value, fmt, startRank, onPlayerClick }) {
   if (!items.length) return null;
   return (
-    <SideCard title={<span style={S.cardTitle}>{icon}{title}</span>}>
-      {items.map((r, i) => (
-        <div key={r.key} style={S.topRow}>
-          <span style={S.topRank}>{i + 1}</span>
-          <button className="pname" style={S.topName} onClick={() => onPlayerClick(r.key)}>{r.name}</button>
-          <span style={S.topVal}>{render(r)}</span>
-        </div>
+    <div className="roll">
+      {items.map((it, i) => (
+        <button key={it.key} className="roll-row rank-rise" style={{ animationDelay: `${i * 40}ms` }} onClick={() => onPlayerClick(it.key)}>
+          <span className="roll-rank">{startRank + i}</span>
+          <span className="roll-name">{it.name}</span>
+          <span className="roll-val">{fmt(value(it))}</span>
+        </button>
       ))}
-    </SideCard>
+    </div>
+  );
+}
+
+// One category leaderboard (top 5): medals on the podium spots, plus a bar that
+// shows how far ahead the leader sits.
+function RankBoard({ icon, title, items, value, fmt, onPlayerClick }) {
+  if (!items || !items.length) return null;
+  const top = value(items[0]) || 1;
+  return (
+    <div className="board rank-rise">
+      <div className="board-head">{icon}<span>{title}</span></div>
+      <ul className="board-list">
+        {items.map((it, i) => {
+          const pct = Math.max(4, Math.round((value(it) / top) * 100));
+          return (
+            <li key={it.key} className="board-row">
+              {i < 3 ? <Medal rank={i + 1} size={20} /> : <span className="board-rank">{i + 1}</span>}
+              <button className="board-name" onClick={() => onPlayerClick(it.key)}>{it.name}</button>
+              <span className="board-val">{fmt(value(it))}</span>
+              <span className="board-bar"><i style={{ width: `${pct}%` }} /></span>
+            </li>
+          );
+        })}
+      </ul>
+    </div>
   );
 }
 function ClassBar({ name, count, total }) {
@@ -771,6 +940,13 @@ const C = {
   ink: "#eef1f6", dim: "#8b94a6", faint: "#4a5160",
   accent: "#7cf2c4", accent2: "#b98cff", up: "#5ce39a", down: "#ff6b7a",
 };
+// Champion metals — the "award" layer for the Rankings hall. Warm precious metals
+// against the cool dark base read as earned, not decorative.
+const METAL = {
+  gold:   { base: "#f7c948", hi: "#ffe9a8", lo: "#a8761c", ink: "#3a2a05", glow: "rgba(247,201,72,.45)" },
+  silver: { base: "#d4dde9", hi: "#f4f8fd", lo: "#8793a6", ink: "#23292f", glow: "rgba(212,221,233,.32)" },
+  bronze: { base: "#e0975c", hi: "#f6cca0", lo: "#965827", ink: "#33200f", glow: "rgba(224,151,92,.34)" },
+};
 const F = {
   display: "'Space Grotesk', 'Segoe UI', system-ui, sans-serif",
   body: "'Inter', system-ui, sans-serif",
@@ -791,6 +967,98 @@ select option { background: ${C.panel}; }
 @media (min-width: 520px) {
   .pm-shot-wrap { align-self: stretch; }
   .pm-shot { position: absolute; inset: 0; width: 100%; height: 100%; }
+}
+
+/* ── Rankings · Hall of Champions ── */
+.rank-scope, .rank-scope *, .rank-scope *::before, .rank-scope *::after { box-sizing: border-box; }
+@keyframes rankRise { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
+@keyframes growX { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+@keyframes sheen { 0% { transform: translateX(-160%); } 100% { transform: translateX(260%); } }
+@keyframes crownFloat { 0%,100% { transform: translateY(0) rotate(-3deg); } 50% { transform: translateY(-4px) rotate(3deg); } }
+@keyframes haloPulse { 0%,100% { opacity: .5; } 50% { opacity: .85; } }
+.rank-rise { animation: rankRise .5s cubic-bezier(.2,.7,.2,1) both; }
+
+/* Podium */
+.podium { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 4px; }
+.ped { position: relative; flex: 1 1 calc(50% - 6px); min-width: 0; display: flex; flex-direction: column;
+  align-items: center; gap: 7px; padding: 18px 12px 16px; border: 1px solid ${C.line}; border-radius: 16px; cursor: pointer;
+  background: radial-gradient(120% 80% at 50% 0%, rgba(255,255,255,.045), transparent 60%), linear-gradient(180deg, ${C.panel2}, ${C.panel});
+  text-align: center; color: ${C.ink}; transition: transform .18s ease, border-color .18s ease, box-shadow .18s ease; }
+.ped:hover { transform: translateY(-3px); border-color: ${C.faint}; }
+.ped:focus-visible { outline: 2px solid ${C.accent}; outline-offset: 2px; }
+.ped-champion { flex-basis: 100%; order: -1; padding: 22px 14px 20px;
+  border-color: rgba(247,201,72,.42); box-shadow: 0 12px 44px ${METAL.gold.glow}; }
+.ped-champion::before { content: ""; position: absolute; inset: -1px; border-radius: 16px; pointer-events: none;
+  background: radial-gradient(60% 42% at 50% 0%, ${METAL.gold.glow}, transparent 70%); animation: haloPulse 3.2s ease-in-out infinite; }
+.ped-name { position: relative; font-family: ${F.display}; font-weight: 700; font-size: 16px; letter-spacing: -.2px;
+  max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ped-champion .ped-name { font-size: clamp(22px, 5vw, 28px);
+  background: linear-gradient(95deg, ${METAL.gold.hi}, ${METAL.gold.base} 52%, ${METAL.gold.hi});
+  -webkit-background-clip: text; background-clip: text; color: transparent; }
+.ped-val { position: relative; font-family: ${F.mono}; font-weight: 600; font-size: 14px; color: ${C.ink}; }
+.ped-champion .ped-val { font-size: clamp(18px, 4vw, 22px); color: ${METAL.gold.base}; }
+.ped-label { position: relative; font-family: ${F.mono}; font-size: 9px; letter-spacing: 1.5px; text-transform: uppercase; color: ${C.dim}; }
+.ped-champion .ped-label { color: ${METAL.gold.base}; }
+.crown { color: ${METAL.gold.base}; filter: drop-shadow(0 2px 6px ${METAL.gold.glow}); animation: crownFloat 3s ease-in-out infinite; }
+
+/* Medals */
+.medal { position: relative; display: inline-flex; align-items: center; justify-content: center; border-radius: 999px;
+  overflow: hidden; font-family: ${F.display}; font-weight: 700; flex: 0 0 auto; }
+.medal > span { position: relative; z-index: 1; }
+.medal-1 { background: radial-gradient(circle at 34% 28%, ${METAL.gold.hi}, ${METAL.gold.base} 52%, ${METAL.gold.lo}); color: ${METAL.gold.ink}; box-shadow: inset 0 0 0 1px rgba(255,255,255,.4), 0 4px 14px ${METAL.gold.glow}; }
+.medal-2 { background: radial-gradient(circle at 34% 28%, ${METAL.silver.hi}, ${METAL.silver.base} 52%, ${METAL.silver.lo}); color: ${METAL.silver.ink}; box-shadow: inset 0 0 0 1px rgba(255,255,255,.45), 0 4px 12px ${METAL.silver.glow}; }
+.medal-3 { background: radial-gradient(circle at 34% 28%, ${METAL.bronze.hi}, ${METAL.bronze.base} 52%, ${METAL.bronze.lo}); color: ${METAL.bronze.ink}; box-shadow: inset 0 0 0 1px rgba(255,255,255,.35), 0 4px 12px ${METAL.bronze.glow}; }
+.medal-1::after { content: ""; position: absolute; top: 0; left: 0; width: 45%; height: 100%; z-index: 2;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,.85), transparent); animation: sheen 2.8s ease-in-out infinite; }
+
+/* Honour roll (ranks 4+) */
+.roll { display: flex; flex-direction: column; gap: 3px; }
+.roll-row { display: grid; grid-template-columns: 30px 1fr auto; align-items: center; column-gap: 10px; width: 100%;
+  padding: 9px 12px; border-radius: 10px; background: ${C.panel}; border: 1px solid transparent; cursor: pointer;
+  transition: border-color .15s ease, transform .15s ease, background .15s ease; }
+.roll-row:hover { border-color: ${C.line}; transform: translateX(2px); background: ${C.panel2}; }
+.roll-row:focus-visible { outline: 2px solid ${C.accent}; outline-offset: 2px; }
+.roll-rank { font-family: ${F.mono}; font-size: 13px; color: ${C.dim}; text-align: center; }
+.roll-name { min-width: 0; text-align: left; color: ${C.ink}; font-family: ${F.display}; font-weight: 600; font-size: 15px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.roll-val { font-family: ${F.mono}; font-weight: 600; font-size: 14px; color: ${C.ink}; white-space: nowrap; }
+
+/* Category boards */
+.board { background: ${C.panel}; border: 1px solid ${C.line}; border-radius: 14px; padding: 14px; }
+.board-head { display: flex; align-items: center; gap: 7px; color: ${C.accent}; font-family: ${F.mono};
+  font-size: 10px; letter-spacing: 1.5px; text-transform: uppercase; margin-bottom: 10px; }
+.board-list { list-style: none; margin: 0; padding: 0; }
+.board-row { display: grid; grid-template-columns: 22px 1fr auto; align-items: center; column-gap: 9px; padding: 7px 0;
+  border-top: 1px solid ${C.line}; }
+.board-row:first-child { border-top: none; }
+.board-rank { font-family: ${F.mono}; font-size: 11px; color: ${C.faint}; text-align: center; }
+.board-name { grid-column: 2; min-width: 0; text-align: left; color: ${C.ink}; font-family: ${F.display};
+  font-weight: 600; font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.board-val { font-family: ${F.mono}; font-weight: 600; font-size: 13px; color: ${C.ink}; white-space: nowrap; }
+.board-bar { grid-column: 1 / -1; height: 3px; border-radius: 999px; background: ${C.panel2}; overflow: hidden; margin-top: 5px; }
+.board-bar > i { display: block; height: 100%; border-radius: 999px; background: ${C.accent}; opacity: .65;
+  transform-origin: left; animation: growX .8s cubic-bezier(.2,.7,.2,1) both; }
+
+/* Name buttons inside the hall inherit type + reset chrome */
+.ped, .roll-row, .board-name { font: inherit; background: none; appearance: none; }
+.board-name { border: none; padding: 0; margin: 0; cursor: pointer; }
+.board-name:hover, .roll-name { transition: color .12s; }
+.board-name:hover { color: ${C.accent}; text-decoration: underline; }
+.board-name:focus-visible { outline: 2px solid ${C.accent}; outline-offset: 2px; border-radius: 4px; }
+
+/* Desktop dais: #2 · #1 (raised, wider) · #3 */
+@media (min-width: 600px) {
+  .podium { flex-wrap: nowrap; align-items: flex-end; gap: 16px; }
+  .ped { flex: 1 1 0; }
+  .ped-champion { flex: 1.35 1 0; order: 0; transform: translateY(-16px); }
+  .ped-champion:hover { transform: translateY(-19px); }
+  .ped-2 { order: -1; }
+  .ped-3 { order: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rank-rise, .crown, .board-bar > i, .ped-champion::before, .medal-1::after { animation: none !important; }
+  .board-bar > i { transform: none !important; }
 }
 `;
 const S = {
@@ -816,15 +1084,26 @@ const S = {
 
   // ── Layout + side widgets ──
   layout: { display: "flex", gap: 14, alignItems: "flex-start", flexWrap: "wrap" },
-  side: { display: "flex", flexDirection: "column", gap: 10, flex: "1 1 240px", minWidth: 220, maxWidth: 420 },
-  sideCard: { background: C.panel, border: `1px solid ${C.line}`, borderRadius: 12, padding: 14 },
-  sideCardTitle: { fontFamily: F.mono, fontSize: 10, letterSpacing: 1.5, textTransform: "uppercase", color: C.dim, marginBottom: 10 },
-  cardTitle: { display: "inline-flex", alignItems: "center", gap: 6, color: C.accent },
+
+  // ── Rankings tab · Hall of Champions ──
+  rankWrap: { display: "flex", flexDirection: "column", gap: 30 },
+  hallHero: { textAlign: "center", padding: "6px 0 2px" },
+  hallHeroKicker: { fontFamily: F.mono, fontSize: 11, letterSpacing: 3, color: C.accent, textTransform: "uppercase" },
+  hallHeroTitle: {
+    fontFamily: F.display, fontWeight: 700, fontSize: "clamp(30px,6.5vw,48px)", letterSpacing: -1, lineHeight: 1.04, margin: "8px 0 10px",
+    background: `linear-gradient(95deg, ${METAL.gold.hi}, ${METAL.gold.base} 48%, ${METAL.gold.hi})`,
+    WebkitBackgroundClip: "text", backgroundClip: "text", color: "transparent",
+  },
+  hallHeroSub: { color: C.dim, fontSize: 14, lineHeight: 1.5, maxWidth: 480, margin: "0 auto" },
+  hall: {},
+  hallHead: { marginBottom: 12 },
+  hallKicker: { fontFamily: F.mono, fontSize: 10, letterSpacing: 2.5, color: C.accent, textTransform: "uppercase" },
+  hallTitle: { fontFamily: F.display, fontWeight: 700, fontSize: "clamp(22px,4vw,30px)", letterSpacing: -0.5, margin: "5px 0 4px" },
+  hallSub: { color: C.dim, fontSize: 13, margin: 0 },
+  rollHead: { fontFamily: F.mono, fontSize: 10, letterSpacing: 1.5, textTransform: "uppercase", color: C.dim, margin: "18px 0 8px" },
+  boardsHead: { fontFamily: F.mono, fontSize: 10, letterSpacing: 1.5, textTransform: "uppercase", color: C.dim, margin: "22px 0 10px" },
+  rankGrid: { display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))", gap: 12, alignItems: "start" },
   kvValue: { fontFamily: F.mono, fontWeight: 600, color: C.ink },
-  topRow: { display: "flex", alignItems: "baseline", gap: 8, padding: "6px 0", borderTop: `1px solid ${C.line}` },
-  topRank: { fontFamily: F.mono, fontSize: 11, color: C.faint, width: 16, textAlign: "right", flex: "0 0 auto" },
-  topName: { background: "none", border: "none", padding: 0, margin: 0, color: C.accent, fontFamily: F.display, fontWeight: 600, fontSize: 14, cursor: "pointer", textAlign: "left", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
-  topVal: { fontFamily: F.mono, fontWeight: 600, fontSize: 13, color: C.ink, whiteSpace: "nowrap", flex: "0 0 auto" },
   classRow: { padding: "6px 0" },
   classHead: { display: "flex", justifyContent: "space-between", fontSize: 13, marginBottom: 4 },
   classTrack: { height: 6, background: C.panel2, borderRadius: 999, overflow: "hidden" },
