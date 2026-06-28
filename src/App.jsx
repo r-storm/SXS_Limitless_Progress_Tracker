@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useRef } from "react";
+import { createPortal } from "react-dom";
 import {
   fmtNum, fmtDate, parseNum, getProfile, PROFILE_META, hasLeft,
   ROSTER_SNAPS, CONQUEST_SNAPS,
@@ -404,31 +405,11 @@ const COMBAT_STATS = [["atk", "ATK"], ["def", "DEF"], ["hp", "HP"], ["spd", "SPD
 const CMP_METRICS = [["power", "Power"], ["dmg", "Conquest DMG"], ["atk", "ATK"], ["def", "DEF"], ["hp", "HP"], ["spd", "SPD"]];
 const GROWTH_WINDOWS = [["7d", 7], ["30d", 30], ["All", null]];
 
-// Build a one-shot index of the CURRENT guild: every present member with their
-// power + combat stats + latest conquest DMG, plus per-metric max/avg/rank so any
-// single player can be placed against the rest. Cheap (≈50 members), runs on open.
-function buildGuildIndex() {
-  const roster = ROSTER_SNAPS[ROSTER_SNAPS.length - 1];
-  const lastConquest = [...CONQUEST_SNAPS].reverse().find((s) => s.rows.length) || null;
-  const dmgMap = {};
-  if (lastConquest) lastConquest.rows.forEach((r) => { dmgMap[r.key] = r.dmg; });
-
-  const members = roster.rows.filter((r) => !hasLeft(r.key)).map((r) => {
-    const pr = getProfile(r.key);
-    const s = pr?.stats || {};
-    return {
-      key: r.key, name: r.name,
-      power: r.power,
-      atk: s.atk != null ? parseNum(s.atk) : null,
-      def: s.def != null ? parseNum(s.def) : null,
-      hp: s.hp != null ? parseNum(s.hp) : null,
-      spd: s.spd != null ? parseNum(s.spd) : null,
-      dmg: dmgMap[r.key] ?? null,
-    };
-  });
-
+// Per-metric placement index: max / avg / count / rankOf for any set of members.
+// Reused for the whole-guild index and for class-scoped peer rankings.
+function statIndex(members, keys) {
   const stat = {};
-  for (const m of ["power", "atk", "def", "hp", "spd", "dmg"]) {
+  for (const m of keys) {
     const vals = members.map((x) => x[m]).filter((v) => v != null);
     const sorted = [...vals].sort((a, b) => b - a);
     stat[m] = {
@@ -438,7 +419,54 @@ function buildGuildIndex() {
       rankOf: (v) => (v == null ? null : sorted.filter((x) => x > v).length + 1),
     };
   }
-  return { members, stat };
+  return stat;
+}
+
+// Every metric a member is ranked against the guild on.
+const INDEX_KEYS = ["power", "atk", "def", "hp", "spd", "dmg", "likes", "gearAvg", "dmgPerPow", "contribPerPow", "gain", "total", "week"];
+
+// Build a one-shot index of the CURRENT guild: every present member with their
+// power, combat stats, progression, social + efficiency figures and latest
+// conquest DMG, plus per-metric max/avg/rank so any single player can be placed
+// against the rest. Also groups members by class and tallies companion usage.
+// Cheap (≈50 members), runs once when a profile opens.
+function buildGuildIndex() {
+  const roster = ROSTER_SNAPS[ROSTER_SNAPS.length - 1];
+  const lastConquest = [...CONQUEST_SNAPS].reverse().find((s) => s.rows.length) || null;
+  const dmgMap = {};
+  if (lastConquest) lastConquest.rows.forEach((r) => { dmgMap[r.key] = r.dmg; });
+
+  // Earliest power on record per player — powers the all-time "gain" ranking.
+  const firstPower = {};
+  for (const snap of ROSTER_SNAPS) for (const row of snap.rows) if (!(row.key in firstPower)) firstPower[row.key] = row.power;
+
+  const members = roster.rows.filter((r) => !hasLeft(r.key)).map((r) => {
+    const pr = getProfile(r.key);
+    const s = pr?.stats || {};
+    const num = (v) => (v != null ? parseNum(v) : null);
+    const power = r.power;
+    const dmg = dmgMap[r.key] ?? null;
+    const total = r.total ?? null;
+    const per1M = (v) => (v != null && power ? v / (power / 1e6) : null);
+    return {
+      key: r.key, name: r.name, power,
+      atk: num(s.atk), def: num(s.def), hp: num(s.hp), spd: num(s.spd),
+      dmg, likes: num(pr?.likes), total, week: r.week ?? null,
+      klass: pr?.class || null, level: pr?.level ?? null, classLevel: pr?.classLevel ?? null,
+      gear: pr?.gear || null, gearAvg: gearAvg(pr),
+      technique: Array.isArray(pr?.technique) ? pr.technique : null,
+      charm: Array.isArray(pr?.charm) ? pr.charm : null,
+      dmgPerPow: per1M(dmg), contribPerPow: per1M(total),
+      gain: firstPower[r.key] != null ? power - firstPower[r.key] : null,
+    };
+  });
+
+  const classGroups = {};
+  for (const m of members) {
+    if (m.klass) (classGroups[m.klass] ||= []).push(m);
+  }
+
+  return { members, stat: statIndex(members, INDEX_KEYS), classGroups };
 }
 
 // One player's history for a single metric, oldest→newest, nulls dropped.
@@ -464,7 +492,7 @@ function computeGrowth(series, days) {
   return { delta, pct: base.value ? (delta / base.value) * 100 : null, baseDate: base.date };
 }
 
-function Sparkline({ series, color = C.accent }) {
+function Sparkline({ series, color = C.accent, dots = false, highlight = -1 }) {
   if (!series || series.length < 2) return null;
   const w = 300, h = 52, pad = 5;
   const vals = series.map((p) => p.value);
@@ -483,6 +511,11 @@ function Sparkline({ series, color = C.accent }) {
       </linearGradient></defs>
       <path d={area} fill={`url(#${gid})`} />
       <path d={line} fill="none" stroke={color} strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
+      {dots && pts.map((c, i) => (
+        i === highlight
+          ? <circle key={i} cx={c[0]} cy={c[1]} r="4" fill={C.up} stroke={C.bg} strokeWidth="1.5" />
+          : i < pts.length - 1 && <circle key={i} cx={c[0]} cy={c[1]} r="2.2" fill={color} fillOpacity="0.55" />
+      ))}
       <circle cx={last[0]} cy={last[1]} r="3" fill={color} />
     </svg>
   );
@@ -535,6 +568,293 @@ function StandingRow({ label, value, info, fmt }) {
   );
 }
 
+// ── Profile insight building blocks ─────────────────────────────────────────────
+const WARN = "#f5b21a"; // upgrade-priority amber (matches the Leader role accent)
+
+// Tooltip whose bubble is portaled to <body> with position:fixed, so the modal's
+// scroll/overflow can never clip it. Shows on hover and keyboard focus.
+function Tip({ text, children, style, className }) {
+  const ref = useRef(null);
+  const [pos, setPos] = useState(null);
+  const show = () => {
+    const el = ref.current;
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    const x = Math.min(Math.max(r.left + r.width / 2, 124), window.innerWidth - 124);
+    setPos({ x, y: r.bottom + 9 });
+  };
+  const hide = () => setPos(null);
+  return (
+    <span ref={ref} style={style} className={["tip-trig", className].filter(Boolean).join(" ")} tabIndex={0} aria-label={text}
+      onMouseEnter={show} onMouseLeave={hide} onFocus={show} onBlur={hide}>
+      {children}
+      {pos && createPortal(<span className="tip-pop" style={{ left: pos.x, top: pos.y }}>{text}</span>, document.body)}
+    </span>
+  );
+}
+
+// ── Combat identity: radar + derived archetype ──
+const RADAR_AXES = [["atk", "ATK"], ["spd", "SPD"], ["def", "DEF"], ["hp", "HP"]];
+
+// Label a build from the shape of its stats (each read relative to the guild's
+// strongest in that stat, so the comparison is apples-to-apples across stats).
+function deriveArchetype(me, stat) {
+  if (!me || me.atk == null || me.def == null || me.hp == null) return null;
+  const n = (k) => (stat[k]?.max ? Math.min(1, (me[k] ?? 0) / stat[k].max) : 0);
+  const atk = n("atk"), def = n("def"), hp = n("hp"), spd = n("spd");
+  const off = atk, bulk = (def + hp) / 2;
+  if (spd >= Math.max(atk, def, hp) + 0.12) return { label: "Striker", desc: "Speed outpaces everything — moves first." };
+  if (off - bulk > 0.15) return { label: "Glass Cannon", desc: "Big attack, lighter defenses." };
+  if (bulk - off > 0.15) return { label: "Tank", desc: "Built to absorb — heavy bulk." };
+  if (off > 0.55 && bulk > 0.55) return { label: "Bruiser", desc: "Hits hard and takes hits." };
+  return { label: "Balanced", desc: "An even spread across stats." };
+}
+
+// Class-average shape (0..1 vs guild max per axis), for the radar overlay.
+function classRadarAvg(group, stat) {
+  const out = {};
+  for (const [k] of RADAR_AXES) {
+    const vals = group.map((m) => m[k]).filter((v) => v != null);
+    const a = vals.length ? vals.reduce((x, y) => x + y, 0) / vals.length : 0;
+    out[k] = stat[k]?.max ? a / stat[k].max : 0;
+  }
+  return out;
+}
+
+function Radar({ vals, avg, size = 232 }) {
+  const c = size / 2, r = c - 34;
+  const ang = (i) => ((-90 + i * 90) * Math.PI) / 180;
+  const pt = (i, v) => [c + r * v * Math.cos(ang(i)), c + r * v * Math.sin(ang(i))];
+  const poly = (o) => RADAR_AXES.map(([k], i) => pt(i, Math.max(0.02, Math.min(1, o?.[k] ?? 0))).map((n) => n.toFixed(1)).join(",")).join(" ");
+  return (
+    <svg viewBox={`0 0 ${size} ${size}`} width={size} height={size} style={{ display: "block", margin: "0 auto", maxWidth: "100%", height: "auto" }} aria-hidden="true">
+      {[0.33, 0.66, 1].map((rr, i) => (
+        <polygon key={i} points={RADAR_AXES.map((_, idx) => pt(idx, rr).map((n) => n.toFixed(1)).join(",")).join(" ")} fill="none" stroke={C.line} strokeWidth="1" />
+      ))}
+      {RADAR_AXES.map((_, i) => { const [x, y] = pt(i, 1); return <line key={i} x1={c} y1={c} x2={x} y2={y} stroke={C.line} strokeWidth="1" />; })}
+      {avg && <polygon points={poly(avg)} fill="none" stroke={C.accent2} strokeWidth="1.5" strokeDasharray="4 3" opacity="0.85" />}
+      <polygon points={poly(vals)} fill={C.accent} fillOpacity="0.16" stroke={C.accent} strokeWidth="2" />
+      {RADAR_AXES.map(([k, lbl], i) => { const [x, y] = pt(i, 1.18); return <text key={k} x={x} y={y} fill={C.dim} fontSize="10" fontFamily={F.mono} textAnchor="middle" dominantBaseline="middle">{lbl}</text>; })}
+    </svg>
+  );
+}
+
+// ── Progression / upgrade advisor (gear · technique · charm) ──
+const SLOT_NUM = ["I", "II", "III", "IV", "V"];
+function ProgressionSection({ p }) {
+  const tracks = [];
+  if (p.gear) tracks.push({ name: "Gear", slots: GEAR_SLOTS.map(([k, l]) => ({ label: l, lvl: p.gear[k] })).filter((s) => s.lvl != null) });
+  if (Array.isArray(p.technique)) tracks.push({ name: "Technique", slots: p.technique.map((lvl, i) => ({ label: SLOT_NUM[i] || `${i + 1}`, lvl })) });
+  if (Array.isArray(p.charm)) tracks.push({ name: "Charm", slots: p.charm.map((lvl, i) => ({ label: SLOT_NUM[i] || `${i + 1}`, lvl })) });
+  const usable = tracks.filter((t) => t.slots.length);
+  if (!usable.length) return null;
+
+  let lowest = null, highest = null;
+  for (const t of usable) for (const s of t.slots) {
+    if (s.lvl == null) continue;
+    if (!lowest || s.lvl < lowest.lvl) lowest = { ...s, track: t.name };
+    if (!highest || s.lvl > highest.lvl) highest = { ...s, track: t.name };
+  }
+  const gap = lowest && highest ? highest.lvl - lowest.lvl : 0;
+
+  return (
+    <div style={S.pmSection}>
+      <div style={S.pmSectionLabel}>Progression & upgrades</div>
+      {usable.map((t) => {
+        const min = Math.min(...t.slots.map((s) => s.lvl));
+        return (
+          <div key={t.name} style={S.progTrack}>
+            <div style={S.progName}>{t.name}</div>
+            <div style={S.progChips}>
+              {t.slots.map((s, i) => (
+                <div key={i} style={{ ...S.progChip, ...(s.lvl === min ? S.progChipLow : {}) }}>
+                  <span style={S.progLvl}>+{s.lvl}</span>
+                  <span style={S.progSlot}>{s.label}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        );
+      })}
+      {lowest && (
+        <div style={S.advisor}>
+          <span style={S.advisorIcon}>▲</span>
+          <span>
+            <b>Upgrade priority:</b> {lowest.track} · {lowest.label} <b style={{ color: WARN }}>+{lowest.lvl}</b>
+            {gap > 0 ? <> — your lowest, {gap} {gap === 1 ? "level" : "levels"} behind your best (+{highest.lvl}).</> : <> — everything is even; push your whole kit up together.</>}
+          </span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Efficiency (output relative to power) ──
+function EfficiencyCard({ label, value, info, hint }) {
+  if (value == null || !info || !info.count) return null;
+  const rank = info.rankOf(value);
+  const pct = info.avg ? ((value - info.avg) / info.avg) * 100 : 0;
+  return (
+    <div style={S.effCard}>
+      <div style={S.growthLabel}>{label}</div>
+      <div style={S.growthValue}>{fmtNum(Math.round(value))}</div>
+      <div style={S.effMeta}>
+        <span style={S.rankChip}>#{rank} of {info.count}</span>
+        <span style={{ color: pct >= 0 ? C.up : C.down, fontWeight: 600 }}>{pct >= 0 ? "+" : ""}{pct.toFixed(0)}%</span>
+      </div>
+      <div style={S.growthBase}>{hint}</div>
+    </div>
+  );
+}
+
+// ── Class peer ranking ──
+const CLASS_METRICS = [["power", "Power"], ["dmg", "DMG"], ["atk", "ATK"], ["def", "DEF"], ["hp", "HP"], ["spd", "SPD"]];
+function ClassRankSection({ me, group }) {
+  if (!me?.klass || !group || group.length < 2) return null;
+  const stat = statIndex(group, CLASS_METRICS.map(([k]) => k));
+  return (
+    <div style={S.pmSection}>
+      <div style={S.pmSectionLabel}>Among {me.klass}s · {group.length} in guild</div>
+      <div style={S.classRankGrid}>
+        {CLASS_METRICS.map(([k, lbl]) => {
+          const info = stat[k];
+          const rank = me[k] != null ? info.rankOf(me[k]) : null;
+          if (rank == null || !info.count) return null;
+          const best = rank === 1;
+          return (
+            <div key={k} style={{ ...S.classRankCell, ...(best ? S.classRankBest : {}) }}>
+              <span style={S.classRankLbl}>{lbl}</span>
+              <span style={{ ...S.classRankVal, ...(best ? { color: WARN } : {}) }}>#{rank}<span style={S.classRankOf}>/{info.count}</span></span>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ── Auto-earned badges ──
+// Each badge is derived purely from where the player lands in the guild — no
+// manual tagging. Ordered by prestige; capped so the row stays readable.
+function computeBadges(me, guild, archetype) {
+  if (!me) return [];
+  const out = [];
+  const st = guild.stat;
+  const rk = (k) => (me[k] != null && st[k]?.count ? st[k].rankOf(me[k]) : null);
+  const top = (k, n) => { const r = rk(k); return r != null && r <= n ? r : null; };
+
+  if (rk("power") === 1) out.push({ label: "Guild Champion", tone: "gold", tip: "Ranked #1 in the guild by total power." });
+  else if (top("power", 5)) out.push({ label: "Top 5 Power", tone: "accent", tip: "Among the five highest-power members." });
+  if (rk("dmg") === 1) out.push({ label: "Conquest MVP", tone: "gold", tip: "Ranked #1 in the guild for Conquest damage." });
+  else if (top("dmg", 5)) out.push({ label: "Top 5 Conquest", tone: "accent", tip: "Among the five biggest Conquest hitters." });
+  if (me.gain > 0 && top("gain", 3)) out.push({ label: "Most Improved", tone: "accent2", tip: "One of the three biggest power gains on record." });
+  if (rk("dmgPerPow") === 1) out.push({ label: "Most Efficient", tone: "accent", tip: "Highest Conquest damage per 1M power — punches above their weight." });
+  if (rk("gearAvg") === 1) out.push({ label: "Best Geared", tone: "accent", tip: "Highest average gear enhancement in the guild." });
+  if (rk("likes") === 1) out.push({ label: "Most Loved", tone: "accent2", tip: "Most likes received of anyone in the guild." });
+  else if (top("likes", 3)) out.push({ label: "Crowd Favourite", tone: "plain", tip: "Among the three most-liked members." });
+  for (const [k, lbl, name] of [["atk", "Top ATK", "attack"], ["def", "Top DEF", "defense"], ["hp", "Top HP", "HP"], ["spd", "Top SPD", "speed"]]) {
+    if (rk(k) === 1) out.push({ label: lbl, tone: "plain", tip: `Highest ${name} in the guild.` });
+  }
+  if (ROSTER_FIRST_SEEN[me.key] && ROSTER_FIRST_SEEN[me.key] === ROSTER_SNAPS[0].id) out.push({ label: "Founding Member", tone: "plain", tip: "Present in the guild since the very first capture." });
+  if (archetype) out.push({ label: archetype.label, tone: "trait", tip: `${archetype.label} — ${archetype.desc}` });
+  return out.slice(0, 8);
+}
+
+function BadgeRow({ badges }) {
+  if (!badges.length) return null;
+  return (
+    <div style={S.badgeRow}>
+      {badges.map((b, i) => {
+        const st = { ...S.badge, ...(S[`badge_${b.tone}`] || {}) };
+        return b.tip
+          ? <Tip key={i} text={`${b.label}: ${b.tip}`} style={st}>{b.label}</Tip>
+          : <span key={i} style={st}>{b.label}</span>;
+      })}
+    </div>
+  );
+}
+
+// ── Trend card: metric switch + milestone markers + projection ──
+function niceStep(v) {
+  const a = Math.abs(v);
+  if (a >= 1e9) return 1e9;
+  if (a >= 1e8) return 5e7;
+  if (a >= 1e7) return 5e6;
+  if (a >= 1e6) return 5e5;
+  if (a >= 1e5) return 5e4;
+  if (a >= 1e4) return 5e3;
+  if (a >= 1e3) return 1e3;
+  return 100;
+}
+// Milestone boundaries (multiples of `step`) the series climbed through, tagged
+// with the date they were first reached.
+function crossings(series, step) {
+  const lo = series[0].value, hi = series[series.length - 1].value;
+  if (hi <= lo) return [];
+  const out = [];
+  for (let b = (Math.floor(lo / step) + 1) * step; b <= hi + 1e-6; b += step) {
+    const pt = series.find((p) => p.value >= b - 1e-6);
+    if (pt) out.push({ value: b, date: pt.date });
+  }
+  return out;
+}
+// Linear extrapolation to the next milestone from the all-window growth rate.
+function projectNext(series, step) {
+  const first = series[0], last = series[series.length - 1];
+  const days = (new Date(last.date) - new Date(first.date)) / 86400000;
+  if (days <= 0) return null;
+  const rate = (last.value - first.value) / days;
+  if (rate <= 0) return null;
+  const next = (Math.floor(last.value / step) + 1) * step;
+  const etaDays = (next - last.value) / rate;
+  if (!isFinite(etaDays) || etaDays <= 0 || etaDays > 3650) return null;
+  return { rate, next, etaDays, etaDate: new Date(new Date(last.date).getTime() + etaDays * 86400000).toISOString() };
+}
+
+function TrendCard({ options }) {
+  const avail = options.filter((o) => o.data.length >= 2);
+  const [mk, setMk] = useState(avail[0]?.key);
+  if (!avail.length) return null;
+  const cur = avail.find((o) => o.key === mk) || avail[0];
+  const data = cur.data;
+  const step = niceStep(data[data.length - 1].value);
+  const cross = crossings(data, step);
+  const proj = projectNext(data, step);
+  let jump = null;
+  for (let i = 1; i < data.length; i++) { const d = data[i].value - data[i - 1].value; if (!jump || d > jump.d) jump = { d, idx: i }; }
+
+  return (
+    <div style={S.trendCard}>
+      <div style={S.trendHead}>
+        <span>{cur.label} trend</span>
+        <span style={S.trendVals}>{fmtNum(data[0].value)} → {fmtNum(data[data.length - 1].value)}</span>
+      </div>
+      {avail.length > 1 && (
+        <div style={{ ...S.seg, marginBottom: 10 }} role="group" aria-label="Trend metric">
+          {avail.map((o) => <button key={o.key} style={segStyle(cur.key === o.key)} onClick={() => setMk(o.key)}>{o.label}</button>)}
+        </div>
+      )}
+      <Sparkline series={data} color={cur.color || C.accent} dots highlight={jump && jump.d > 0 ? jump.idx : -1} />
+      <div style={S.trendAxis}>
+        <span>{fmtDate(data[0].date)}</span>
+        <span>{fmtDate(data[data.length - 1].date)}</span>
+      </div>
+      {(cross.length > 0 || jump?.d > 0) && (
+        <div style={S.milestoneRow}>
+          {jump?.d > 0 && <span style={S.milestone}>Best jump · +{fmtNum(jump.d)}</span>}
+          {cross.slice(-2).map((c, i) => <span key={i} style={S.milestone}>Reached {fmtNum(c.value)} · {fmtDate(c.date)}</span>)}
+        </div>
+      )}
+      {proj && (
+        <div style={S.projection}>
+          <span style={S.projIcon}>↗</span>
+          <span>At <b>+{fmtNum(Math.round(proj.rate))}/day</b>, reaches <b style={{ color: C.accent }}>{fmtNum(proj.next)}</b> around <b>{fmtDate(proj.etaDate)}</b> (~{Math.round(proj.etaDays)}d). Estimate.</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function PlayerModal({ playerKey, onClose }) {
   const p = getProfile(playerKey);
   const [zoomed, setZoomed] = useState(false);
@@ -563,6 +883,24 @@ function PlayerModal({ playerKey, onClose }) {
 
   const displayName = p?.name || me?.name || "Unknown player";
   const headPower = me ? fmtNum(me.power) : p?.power;
+
+  // Derived insight: archetype, radar shape, class peers, auto-badges.
+  const archetype = useMemo(() => (me ? deriveArchetype(me, guild.stat) : null), [me, guild]);
+  const classGroup = me?.klass ? guild.classGroups[me.klass] : null;
+  const hasRadar = !!(me && me.atk != null && me.def != null && me.hp != null);
+  const radarVals = useMemo(() => {
+    if (!me) return null;
+    const n = (k) => (guild.stat[k]?.max ? (me[k] ?? 0) / guild.stat[k].max : 0);
+    return { atk: n("atk"), spd: n("spd"), def: n("def"), hp: n("hp") };
+  }, [me, guild]);
+  const classAvg = useMemo(
+    () => (classGroup && classGroup.length > 1 ? classRadarAvg(classGroup, guild.stat) : null),
+    [classGroup, guild]
+  );
+  const badges = useMemo(() => computeBadges(me, guild, archetype), [me, guild, archetype]);
+  const likesInfo = guild.stat.likes;
+  const likesRank = me?.likes != null && likesInfo?.count ? likesInfo.rankOf(me.likes) : null;
+
   const others = useMemo(
     () => guild.members.filter((m) => m.key !== playerKey).sort((a, b) => a.name.toLowerCase().localeCompare(b.name.toLowerCase())),
     [guild, playerKey]
@@ -603,10 +941,20 @@ function PlayerModal({ playerKey, onClose }) {
                   </div>
                 )}
 
+                <BadgeRow badges={badges} />
+
                 {headPower != null && (
                   <div style={S.pmPowerRow}>
                     <span style={S.pmPowerLabel}>POWER</span>
                     <span style={S.pmPowerValue}>{headPower}</span>
+                  </div>
+                )}
+
+                {likesRank != null && (
+                  <div style={S.likesLine} title="Likes received">
+                    <span style={S.likesHeart}>♥</span>
+                    <b>{fmtNum(me.likes)}</b> likes
+                    <span style={S.likesRank}>#{likesRank} of {likesInfo.count}</span>
                   </div>
                 )}
 
@@ -626,6 +974,41 @@ function PlayerModal({ playerKey, onClose }) {
               </div>
             </div>
 
+            {/* ── Combat identity (radar + archetype) ── */}
+            {hasRadar && (
+              <div style={S.pmSection}>
+                <div style={S.pmSectionHead}>
+                  <span style={S.pmSectionLabel}>Combat identity</span>
+                  {archetype && <Tip text={archetype.desc} style={S.archetypePill}>{archetype.label}</Tip>}
+                </div>
+                <div style={S.identityWrap}>
+                  <Radar vals={radarVals} avg={classAvg} />
+                  <div style={S.identityText}>
+                    {archetype && <div style={S.archetypeDesc}>{archetype.desc}</div>}
+                    <div style={S.radarLegend}>
+                      <span style={S.legItem}><i style={{ ...S.legSwatch, background: C.accent }} /> {displayName}</span>
+                      {classAvg && <span style={S.legItem}><i style={{ ...S.legSwatch, background: C.accent2 }} /> {me.klass} avg</span>}
+                    </div>
+                    <div style={S.identityNote}>Each axis is scaled to the guild's best in that stat.</div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* ── Progression & upgrade advisor ── */}
+            {p && <ProgressionSection p={p} />}
+
+            {/* ── Efficiency ── */}
+            {me && (me.dmgPerPow != null || me.contribPerPow != null) && (
+              <div style={S.pmSection}>
+                <div style={S.pmSectionLabel}>Efficiency · output vs power</div>
+                <div style={S.effGrid}>
+                  <EfficiencyCard label="DMG / 1M power" value={me.dmgPerPow} info={guild.stat.dmgPerPow} hint="conquest damage per 1M power" />
+                  <EfficiencyCard label="Contrib / 1M power" value={me.contribPerPow} info={guild.stat.contribPerPow} hint="total contribution per 1M power" />
+                </div>
+              </div>
+            )}
+
             {/* ── Growth over time ── */}
             <div style={S.pmSection}>
               <div style={S.pmSectionHead}>
@@ -642,19 +1025,11 @@ function PlayerModal({ playerKey, onClose }) {
                 <GrowthCard label="Conquest DMG" series={dmgSeries} days={windowDays} fmt={fmtNum} />
                 <GrowthCard label="Gear (avg +)" series={gearSeries} days={windowDays} fmt={fmtGear} />
               </div>
-              {powerSeries.length >= 2 && (
-                <div style={S.trendCard}>
-                  <div style={S.trendHead}>
-                    <span>Power trend</span>
-                    <span style={S.trendVals}>{fmtNum(powerSeries[0].value)} → {fmtNum(powerSeries[powerSeries.length - 1].value)}</span>
-                  </div>
-                  <Sparkline series={powerSeries} />
-                  <div style={S.trendAxis}>
-                    <span>{fmtDate(powerSeries[0].date)}</span>
-                    <span>{fmtDate(powerSeries[powerSeries.length - 1].date)}</span>
-                  </div>
-                </div>
-              )}
+              <TrendCard options={[
+                { key: "power", label: "Power", data: powerSeries, color: C.accent },
+                { key: "total", label: "Contribution", data: totalSeries, color: C.accent2 },
+                { key: "dmg", label: "Conquest", data: dmgSeries, color: C.up },
+              ]} />
             </div>
 
             {/* ── Standing in the guild ── */}
@@ -670,6 +1045,9 @@ function PlayerModal({ playerKey, onClose }) {
                 </div>
               </div>
             )}
+
+            {/* ── Class peer ranking ── */}
+            {me && classGroup && <ClassRankSection me={me} group={classGroup} />}
 
             {/* ── Head-to-head ── */}
             {me && others.length > 0 && (
@@ -961,6 +1339,21 @@ const CSS = `
 select option { background: ${C.panel}; }
 .pname { transition: color .12s; }
 .pname:hover { color: ${C.accent}; text-decoration: underline; }
+
+/* Tooltip trigger + portaled bubble (rendered to <body>, fixed-positioned, so it
+   layers above everything and never clips against the modal's scroll edge). */
+.tip-trig { cursor: help; }
+.tip-trig:focus-visible { outline: 2px solid ${C.accent}; outline-offset: 2px; border-radius: 999px; }
+.tip-pop {
+  position: fixed; transform: translateX(-50%);
+  width: max-content; max-width: 230px; white-space: normal; text-align: center;
+  background: #060810; color: ${C.ink}; border: 1px solid ${C.line}; border-radius: 8px;
+  padding: 7px 10px; font-family: ${F.body}; font-size: 12px; font-weight: 500; line-height: 1.4;
+  letter-spacing: 0; text-transform: none; box-shadow: 0 8px 24px rgba(0,0,0,.5);
+  pointer-events: none; z-index: 100; animation: tipIn .12s ease-out;
+}
+@keyframes tipIn { from { opacity: 0; transform: translateX(-50%) translateY(-4px); } to { opacity: 1; transform: translateX(-50%) translateY(0); } }
+@media (prefers-reduced-motion: reduce) { .tip-pop { animation: none; } }
 @keyframes pmIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
 /* Side-by-side modal: pin the screenshot to the info column's height, cropping
    from the top so it ends level with the gear cards. Stacks full-height below. */
@@ -1190,4 +1583,58 @@ const S = {
   cmpLabel: { fontFamily: F.mono, fontSize: 11, letterSpacing: 0.5, textTransform: "uppercase", color: C.dim },
   cmpCell: { fontFamily: F.mono, fontSize: 13, fontWeight: 600, textAlign: "right", color: C.dim },
   cmpWin: { color: C.ink, background: "rgba(124,242,196,.08)" },
+
+  // ── Badges (auto-earned) ──
+  badgeRow: { display: "flex", flexWrap: "wrap", gap: 6, marginTop: 12 },
+  badge: { fontFamily: F.display, fontSize: 11, fontWeight: 600, padding: "4px 10px", borderRadius: 999, background: C.panel2, border: `1px solid ${C.line}`, color: C.dim, whiteSpace: "nowrap" },
+  badge_gold: { background: "rgba(247,201,72,.12)", border: `1px solid ${METAL.gold.lo}`, color: METAL.gold.base },
+  badge_accent: { background: "rgba(124,242,196,.10)", border: "1px solid #27503f", color: C.accent },
+  badge_accent2: { background: "rgba(185,140,255,.12)", border: "1px solid #3d2c5c", color: C.accent2 },
+  badge_plain: { background: C.panel2, border: `1px solid ${C.line}`, color: C.ink },
+  badge_trait: { background: "transparent", border: `1px dashed ${C.faint}`, color: C.dim },
+
+  // ── Likes (discreet inline line) ──
+  likesLine: { display: "flex", alignItems: "center", gap: 5, marginTop: 10, fontFamily: F.mono, fontSize: 12, color: C.dim },
+  likesHeart: { color: C.accent2 },
+  likesRank: { color: C.faint, marginLeft: 2 },
+
+  // ── Combat identity (radar) ──
+  archetypePill: { fontFamily: F.display, fontWeight: 600, fontSize: 13, padding: "4px 12px", borderRadius: 999, background: "rgba(185,140,255,.12)", border: "1px solid #3d2c5c", color: C.accent2 },
+  identityWrap: { display: "flex", flexWrap: "wrap", gap: 16, alignItems: "center" },
+  identityText: { flex: "1 1 160px", minWidth: 150 },
+  archetypeDesc: { fontSize: 14, color: C.ink, lineHeight: 1.5 },
+  radarLegend: { display: "flex", flexWrap: "wrap", gap: 12, marginTop: 10 },
+  legItem: { display: "inline-flex", alignItems: "center", gap: 6, fontFamily: F.mono, fontSize: 11, color: C.dim },
+  legSwatch: { width: 10, height: 10, borderRadius: 3, display: "inline-block" },
+  identityNote: { fontSize: 10, color: C.faint, marginTop: 10 },
+
+  // ── Progression / upgrade advisor ──
+  progTrack: { marginBottom: 10 },
+  progName: { fontFamily: F.mono, fontSize: 10, letterSpacing: 1, textTransform: "uppercase", color: C.dim, marginBottom: 5 },
+  progChips: { display: "flex", flexWrap: "wrap", gap: 6 },
+  progChip: { flex: "1 1 60px", background: C.panel2, border: `1px solid ${C.line}`, borderRadius: 9, padding: "7px 4px", textAlign: "center" },
+  progChipLow: { border: `1px solid ${WARN}`, background: "rgba(245,178,26,.10)" },
+  progLvl: { display: "block", fontFamily: F.display, fontWeight: 700, fontSize: 15, color: C.ink },
+  progSlot: { display: "block", fontSize: 9, letterSpacing: 0.5, color: C.dim, marginTop: 2 },
+  advisor: { display: "flex", gap: 8, alignItems: "flex-start", marginTop: 10, padding: "10px 12px", background: "rgba(245,178,26,.07)", border: `1px solid #4d3a12`, borderRadius: 10, fontSize: 13, color: C.ink, lineHeight: 1.45 },
+  advisorIcon: { color: WARN, fontSize: 11, lineHeight: "20px" },
+
+  // ── Efficiency ──
+  effGrid: { display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(150px,1fr))", gap: 8 },
+  effCard: { background: C.panel2, border: `1px solid ${C.line}`, borderRadius: 12, padding: "12px 14px" },
+  effMeta: { display: "flex", justifyContent: "space-between", alignItems: "center", fontFamily: F.mono, fontSize: 11, marginTop: 6 },
+
+  // ── Class peer ranking ──
+  classRankGrid: { display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(92px,1fr))", gap: 8 },
+  classRankCell: { background: C.panel2, border: `1px solid ${C.line}`, borderRadius: 10, padding: "9px 10px", display: "flex", flexDirection: "column", gap: 3 },
+  classRankBest: { border: `1px solid ${WARN}`, background: "rgba(245,178,26,.08)" },
+  classRankLbl: { fontFamily: F.mono, fontSize: 10, letterSpacing: 0.5, textTransform: "uppercase", color: C.dim },
+  classRankVal: { fontFamily: F.display, fontWeight: 700, fontSize: 18, color: C.ink },
+  classRankOf: { fontFamily: F.mono, fontSize: 11, fontWeight: 400, color: C.faint },
+
+  // ── Trend extras (milestones / projection) ──
+  milestoneRow: { display: "flex", flexWrap: "wrap", gap: 6, marginTop: 8 },
+  milestone: { fontFamily: F.mono, fontSize: 10, color: C.dim, background: C.panel, border: `1px solid ${C.line}`, borderRadius: 999, padding: "3px 9px" },
+  projection: { display: "flex", gap: 8, alignItems: "flex-start", marginTop: 8, fontSize: 12, color: C.dim, lineHeight: 1.45 },
+  projIcon: { color: C.accent, fontWeight: 700 },
 };
