@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from "react";
 import {
-  fmtNum, fmtDate, parseNum, getProfile, PROFILE_META,
+  fmtNum, fmtDate, parseNum, getProfile, PROFILE_META, hasLeft,
   ROSTER_SNAPS, CONQUEST_SNAPS,
   ROSTER_FIRST_SEEN, CONQUEST_FIRST_SEEN,
   playerTimeline, profileTimeline,
@@ -98,9 +98,10 @@ function RosterView({ snaps, firstSeen, onPlayerClick }) {
   const compare = snaps.find((s) => s.id === compareId) || null;
   const cmap = useMemo(() => { const m = {}; if (compare) compare.rows.forEach((r) => { m[r.key] = r; }); return m; }, [compare]);
 
-  // Only show players present in the latest capture — anyone who has since left
-  // the guild is hidden, even when viewing an older snapshot.
-  const currentKeys = useMemo(() => new Set(snaps[snaps.length - 1].rows.map((r) => r.key)), [snaps]);
+  // Only show players present in the latest capture and not flagged as having
+  // left (see LEFT in src/data/players.js) — leavers are hidden everywhere, even
+  // when viewing an older snapshot.
+  const currentKeys = useMemo(() => new Set(snaps[snaps.length - 1].rows.map((r) => r.key).filter((k) => !hasLeft(k))), [snaps]);
 
   const totals = useMemo(() => {
     const present = active.rows.filter((r) => currentKeys.has(r.key));
@@ -245,9 +246,10 @@ function ConquestView({ snaps, firstSeen, onPlayerClick }) {
   const compare = snaps.find((s) => s.id === compareId) || null;
   const cmap = useMemo(() => { const m = {}; if (compare) compare.rows.forEach((r) => { m[r.key] = r; }); return m; }, [compare]);
 
-  // Only show players present in the latest capture — anyone who has since left
-  // the guild is hidden, even when viewing an older snapshot.
-  const currentKeys = useMemo(() => new Set(snaps[snaps.length - 1].rows.map((r) => r.key)), [snaps]);
+  // Only show players present in the latest capture and not flagged as having
+  // left (see LEFT in src/data/players.js) — leavers are hidden everywhere, even
+  // when viewing an older snapshot.
+  const currentKeys = useMemo(() => new Set(snaps[snaps.length - 1].rows.map((r) => r.key).filter((k) => !hasLeft(k))), [snaps]);
 
   const totals = useMemo(() => {
     const present = active.rows.filter((r) => currentKeys.has(r.key));
@@ -371,7 +373,7 @@ function buildGuildIndex() {
   const dmgMap = {};
   if (lastConquest) lastConquest.rows.forEach((r) => { dmgMap[r.key] = r.dmg; });
 
-  const members = roster.rows.map((r) => {
+  const members = roster.rows.filter((r) => !hasLeft(r.key)).map((r) => {
     const pr = getProfile(r.key);
     const s = pr?.stats || {};
     return {

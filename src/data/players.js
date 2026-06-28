@@ -16,6 +16,17 @@ export const RENAMES = {
   "dqoo7": "DQO07",       // capture 2 spells it with a double-O
 };
 
+// Players who have LEFT the guild. List any spelling of their name — it's
+// resolved through playerKey, so renames still match. Marked players are hidden
+// from the dashboard everywhere (every snapshot), even captures where they were
+// still present. Add a name here the moment someone leaves.
+export const LEFT = [
+  "Bfoz",
+  "Leetokki",
+  "Raij",
+  "Shrecky",
+];
+
 function normalize(name) {
   return String(name || "").trim().toLowerCase();
 }
@@ -30,4 +41,12 @@ export function playerKey(name) {
     key = normalize(RENAMES[key]);
   }
   return key;
+}
+
+// Canonical keys of everyone who has left — built from LEFT through playerKey.
+export const LEFT_KEYS = new Set(LEFT.map(playerKey));
+
+// Has this player left the guild? Accepts any spelling of their name (or a key).
+export function hasLeft(nameOrKey) {
+  return LEFT_KEYS.has(playerKey(nameOrKey));
 }
